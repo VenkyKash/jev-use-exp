@@ -4,7 +4,8 @@ Keep changes inside this repository. Preserve the copied browser demos as the
 regression baseline. The native v0 is Python-only; do not claim native TypeScript
 or cross-platform parity until tested. Do not modify Cua Driver to fit this agent.
 
-Every task mutation, including app launch, must be selected by Jev in live mode.
+Launching the explicitly named task app and binding its unambiguous window are
+deterministic setup. Every subsequent task mutation must be selected by Jev.
 No Codex runtime, hidden planner, hard-coded app sequence, or model fallback.
 Mock providers prove mechanics only. Keep expected verification values out of
 provider requests; never treat a tool success response as task completion.
@@ -14,6 +15,10 @@ Python suite plus preserved TypeScript checks before final handoff. Keep runtime
 logs untracked; they may contain user-supplied text and UI content.
 
 ## Notes to self.
+
+- Codex translates intent; the runner executes explicit setup, Cua executes tools,
+  and Jev chooses task actions. Do not require Jev to reconsider an explicit app
+  launch or offer reobserve before a target exists. Dry-run must never launch.
 
 - Calculator's non-actionable display rows were present in tree_markdown but
   absent from structured elements (elements_complete=false). Do not equate an

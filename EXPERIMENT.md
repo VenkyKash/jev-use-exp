@@ -10,7 +10,8 @@ Python-only and currently gated to macOS accessibility roles.
 - One persistent Driver MCP session with capability/schema checks. A unique
   titled window can be bound when the other windows are explicitly offscreen and
   untitled. Multiple named documents or visible untitled windows remain ambiguous.
-- Jev chooses every mutation, including launch. No Codex API or fallback model.
+- Explicit app launch is deterministic setup; Jev chooses subsequent mutations.
+  No Codex API or fallback model.
 - A generic builder offers supported labelled controls and supplied text inputs
   within window content. Application/system menu trees are excluded before
   context/candidate limits; scope and excluded counts are disclosed to Jev.
@@ -49,12 +50,15 @@ Calculator selector or Jev success is claimed. A readback value must remain
 separate from the label for v0's exact check to work.
 
 Supply both `--pid` and `--window-id` to attach to an existing window. Otherwise
-Jev first chooses whether to launch the explicitly named app. If launch returns
+the runner launches the explicitly named app without a Jev decision. If launch returns
 ambiguous windows, the runner reports `needs_window_selection` with their IDs;
 restart with the intended pair. It does not guess the largest window.
 
-`--dry-run` makes one Jev decision without a mutation, including without launching
-an app. With an existing target it reads that window. `--log` requires a new file
+`--dry-run` reports planned setup without launching or calling Jev when no target
+is supplied. With an existing target it reads that window and makes one Jev
+decision without a mutation. `--read-only` allows explicit app setup but offers
+only reobserve/abstain afterward; it does not yet generate a free-text Jev report.
+`--log` requires a new file
 in an existing directory and never overwrites a previous trace. `--seed` controls
 candidate-order permutations, not model randomness. Default limits are 24
 decisions, 180 seconds, three consecutive unchanged observations, and confidence

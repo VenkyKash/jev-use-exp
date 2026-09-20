@@ -15,7 +15,7 @@ import uuid
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from native_candidates import build_native_candidates, launch_candidates
+from native_candidates import build_native_candidates
 from native_core import StepResult, Task, verify
 from native_driver import NativeDriver, select_window
 from native_errors import error_details
@@ -24,16 +24,45 @@ from native_jev import JevChooser, decision_request, validate_decision
 
 
 async def run_loop(task, driver, chooser, emit, *, target=None, max_steps=24,
-                   no_progress_limit=3, minimum_confidence=.5, seed=0, dry_run=False):
+                   no_progress_limit=3, minimum_confidence=.5, seed=0, dry_run=False,
+                   read_only=False):
     history = []
     stalled = 0
+    if target is None:
+        if dry_run:
+            emit(dict(event="setup_planned", tool="launch_app", arguments={"name": task.app}))
+            return "dry_run"
+        emit(dict(event="setup_dispatch", tool="launch_app", arguments={"name": task.app},
+                  authority="explicit_task_app"))
+        try:
+            result = await driver.call("launch_app", {"name": task.app})
+        except Exception as error:
+            emit(dict(event="setup_failed", **error_details(error)))
+            return "unknown"  # Never repeat an uncertain launch.
+        pid = result.get("pid")
+        if type(pid) is not int or pid <= 0:
+            return "unknown"
+        windows = result.get("windows", [])
+        for _ in range(5):
+            if select_window(windows, pid) is not None:
+                break
+            await asyncio.sleep(.2)
+            windows = (await driver.call("list_windows", {"pid": pid})).get("windows", [])
+        window_id = select_window(windows, pid)
+        if window_id is None:
+            emit(dict(event="target_required", pid=pid, windows=windows))
+            return "needs_window_selection"
+        target = (pid, window_id)
+        emit(dict(event="target_bound", pid=pid, window_id=window_id,
+                  rule="unique_named_or_only_window"))
     observation = await driver.observe(*target) if target else None
+    emit(dict(event="observation", snapshot_id=observation.id, elements=observation.compact()))
     visits = {observation.fingerprint(): 1} if observation else {}
     for step in range(max_steps):
         if observation and verify(task, observation):
             return "verified"
-        candidates = (build_native_candidates(task, observation, driver.accepts) if observation
-                      else launch_candidates(task, driver.accepts))
+        candidates = build_native_candidates(task, observation,
+                                            (lambda *_: False) if read_only else driver.accepts)
         request = decision_request(task, observation, candidates, history, max_steps-step, seed+step)
         decision_id = f"decision-{step+1}"
         emit(dict(event="decision_request", decision_id=decision_id, request=request,
@@ -72,23 +101,6 @@ async def run_loop(task, driver, chooser, emit, *, target=None, max_steps=24,
                     except Exception:
                         pass
                 return "unknown"
-        if candidate.id == "launch":
-            pid = result.get("pid")
-            if type(pid) is not int or pid <= 0:
-                return "unknown"
-            windows = result.get("windows", [])
-            for _ in range(5):
-                if select_window(windows, pid) is not None:
-                    break
-                await asyncio.sleep(.2)
-                windows = (await driver.call("list_windows", {"pid": pid})).get("windows", [])
-            window_id = select_window(windows, pid)
-            if window_id is None:
-                emit(dict(event="target_required", pid=pid, windows=windows))
-                return "needs_window_selection"
-            target = (pid, window_id)
-            emit(dict(event="target_bound", pid=pid, window_id=window_id,
-                      rule="unique_named_or_only_window"))
         if target:
             observation = await driver.observe(*target)
         changed = observation is not None and before != observation.fingerprint()
@@ -119,6 +131,7 @@ def parse_args():
     parser.add_argument("--inspect", action="store_true", help="read a specified window without Jev or actions")
     parser.add_argument("--doctor", action="store_true", help="read MCP capabilities without opening apps")
     parser.add_argument("--dry-run", action="store_true", help="one Jev decision, no mutations")
+    parser.add_argument("--read-only", action="store_true", help="allow explicit app setup, then only observation or abstention")
     parser.add_argument("--max-steps", type=int, default=24)
     parser.add_argument("--timeout", type=float, default=180)
     parser.add_argument("--minimum-confidence", type=float, default=.5)
@@ -158,7 +171,7 @@ async def execute(args, emit):
                 return await run_loop(task, driver, JevChooser(client, emit=emit), emit,
                     target=(args.pid, args.window_id) if args.pid else None,
                     max_steps=args.max_steps, minimum_confidence=args.minimum_confidence,
-                    seed=args.seed, dry_run=args.dry_run)
+                    seed=args.seed, dry_run=args.dry_run, read_only=args.read_only)
 
 
 def main():

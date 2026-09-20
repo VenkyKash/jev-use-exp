@@ -122,19 +122,22 @@ class NativeLoopTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_multi_step_form_and_independent_submission(self):
         driver, events = FixtureDriver(), []
-        chooser = ScriptedTestChooser(["launch", "type-0-0", "type-1-1", "click-2"])
+        chooser = ScriptedTestChooser(["type-0-0", "type-1-1", "click-2"])
         result = await run_loop(self.form_task(), driver, chooser, events.append)
         self.assertEqual(result, "verified")
         self.assertEqual(driver.submitted, ("Ada", "Paris"))
-        self.assertEqual(len(driver.calls), len(chooser.requests))
+        self.assertEqual(len(driver.calls), len(chooser.requests) + 1)
+        self.assertTrue(all("launch" not in r["criteria"] for r in chooser.requests))
+        self.assertTrue(all(r["observation"]["elements"] for r in chooser.requests))
         self.assertTrue(all(len(r["criteria"]) >= 3 for r in chooser.requests))
-        self.assertEqual(len([e for e in events if e["event"] == "dispatch"]), 4)
+        self.assertEqual(len([e for e in events if e["event"] == "dispatch"]), 3)
+        self.assertEqual(len([e for e in events if e["event"] == "setup_dispatch"]), 1)
 
     async def test_calculator_same_runner_and_builder(self):
         driver = FixtureDriver("calculator")
         calculator = Task.parse(dict(goal="Calculate 17 × 23", app="Calculator", inputs=[],
             checks=[dict(role="AXStaticText", label="Display", equals="391")]))
-        chooser = ScriptedTestChooser(["launch", "click-1", "click-7", "click-10", "click-2", "click-3", "click-11"])
+        chooser = ScriptedTestChooser(["click-1", "click-7", "click-10", "click-2", "click-3", "click-11"])
         self.assertEqual(await run_loop(calculator, driver, chooser, lambda e: None), "verified")
         self.assertEqual(driver.display, "391")
 
@@ -153,7 +156,7 @@ class NativeLoopTest(unittest.IsolatedAsyncioTestCase):
     async def test_provider_error_has_no_fallback(self):
         driver = FixtureDriver()
         self.assertEqual(await run_loop(self.form_task(), driver, ScriptedTestChooser(["invented"]),
-                                       lambda e: None), "provider_failed")
+                                       lambda e: None, target=(1,2)), "provider_failed")
         self.assertEqual(driver.calls, [])
 
     async def test_uncertain_action_observes_and_never_retries(self):

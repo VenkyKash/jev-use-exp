@@ -55,11 +55,3 @@ def build_native_candidates(task: Task, observation: Observation,
         raise DiagnosticError("candidate_limit", "more than 62 executable options; v0 refuses instead of hiding alternatives",
                               executable_options=len(candidates))
     return CandidateSet(observation.id, tuple(candidates + reserved()))
-
-
-def launch_candidates(task: Task, accepts: Callable[[str, dict], bool]) -> CandidateSet:
-    arguments = {"name": task.app}
-    if not accepts("launch_app", arguments):
-        raise ValueError("Driver does not support launch_app(name)")
-    return CandidateSet("startup", tuple([Candidate("launch", f"Open the requested app {task.app!r}.",
-                                                   "launch_app", arguments)] + reserved()))

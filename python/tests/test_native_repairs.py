@@ -120,7 +120,7 @@ class RuntimeRepairTest(unittest.IsolatedAsyncioTestCase):
             checks=[dict(role="AXStaticText", label="Receipt", equals="Ada | Paris")]))
         driver = MultipleWindows()
         events = []
-        chooser = ScriptedTestChooser(["launch", "type-0-0", "type-1-1", "click-2"])
+        chooser = ScriptedTestChooser(["type-0-0", "type-1-1", "click-2"])
         self.assertEqual(await run_loop(spec, driver, chooser, events.append), "verified")
         self.assertEqual(next(e["window_id"] for e in events if e["event"] == "target_bound"), 2)
 
@@ -139,9 +139,9 @@ class RuntimeRepairTest(unittest.IsolatedAsyncioTestCase):
         class LowConfidence:
             async def choose(self, request):
                 from native_core import Decision
-                return Decision("launch", .1, {"launch": 1, "reobserve": 0, "abstain": 0}, "test")
+                return Decision("abstain", .1, {key: float(key == "abstain") for key in request["criteria"]}, "test")
         events = []
         driver = FixtureDriver()
         self.assertEqual(await run_loop(task(), driver, LowConfidence(), events.append), "provider_failed")
         self.assertEqual(events[-1]["code"], "confidence_rejected")
-        self.assertEqual(driver.calls, [])
+        self.assertEqual(len(driver.calls), 1)  # Explicit setup only; no Jev mutation.
