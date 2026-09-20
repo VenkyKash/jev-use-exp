@@ -6,6 +6,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from native_core import Task, verify
 from native_driver import normalize
 from native_candidates import build_native_candidates
+from native_core import Decision
+from native_jev import decision_request, validate_decision
 
 
 def task():
@@ -75,3 +77,25 @@ class NativeCandidatesTest(unittest.TestCase):
         raw["elements"][1]["enabled"] = False
         self.assertEqual(len(build_native_candidates(task(), normalize(raw, 1, 2), lambda *_: True).candidates), 2)
         self.assertEqual(len(build_native_candidates(task(), normalize(snapshot(), 1, 2), lambda *_: False).candidates), 2)
+
+
+class NativeDecisionTest(unittest.TestCase):
+    def request(self):
+        obs = normalize(snapshot(), 1, 2)
+        return decision_request(task(), obs, build_native_candidates(task(), obs, lambda *_: True), [], 20, 42)
+
+    def test_request_has_no_verifier_or_executable_arguments(self):
+        import json
+        payload = json.dumps(self.request())
+        for forbidden in ['"checks"', '"equals"', '"Done"', '"element_token"', '"delivery_mode"']:
+            self.assertNotIn(forbidden, payload)
+
+    def test_probabilities_and_confidence_fail_closed(self):
+        request = self.request()
+        valid = {key: float(key == "click-1") for key in request["criteria"]}
+        validate_decision(Decision("click-1", .9, valid, "jev"), request, .5)
+        for choice in [Decision("invented", 1, valid, None), Decision("click-1", float("nan"), valid, None),
+                       Decision("click-1", .2, valid, None), Decision("click-1", 1, {"click-1": 1}, None),
+                       Decision("click-1", 1, {key: .9 for key in valid}, None)]:
+            with self.assertRaises(ValueError):
+                validate_decision(choice, request, .5)
