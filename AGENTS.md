@@ -1,7 +1,7 @@
 # Experimental Jev runner
 
-Keep changes inside this repository. Preserve the copied browser demos as the
-regression baseline. The native v0 is Python-only; do not claim native TypeScript
+Keep changes inside this repository. Preserve the copied browser demo mode as the
+regression baseline while extending its shared Python modules. The native v0 is Python-only; do not claim native TypeScript
 or cross-platform parity until tested. Do not modify Cua Driver to fit this agent.
 
 Launching the explicitly named task app and binding its unambiguous window are
@@ -15,6 +15,11 @@ Python suite plus preserved TypeScript checks before final handoff. Keep runtime
 logs untracked; they may contain user-supplied text and UI content.
 
 ## Notes to self.
+
+- Reuse original browser setup/adapter for task-driven research. Keyword queries
+  can return fragments; offer scoped region reads before treating evidence as
+  sufficient. Link labels do not prove destination: host checks happen after
+  navigation and must not be described as a pre-navigation security boundary.
 
 - Codex translates intent; the runner executes explicit setup, Cua executes tools,
   and Jev chooses task actions. Do not require Jev to reconsider an explicit app

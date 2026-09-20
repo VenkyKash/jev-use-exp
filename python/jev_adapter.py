@@ -101,12 +101,14 @@ def choose_with_typesafe(
     snapshot: dict[str, Any],
     visual: VisualObservation | None,
     history: list[dict[str, Any]],
+    *,
+    goal: str = "Enter the verification token, then submit the form.",
 ) -> tuple[str, float, dict[str, float]]:
     from typesafe_sdk import Choice
 
     criteria = _candidate_criteria(candidates)
     state = {
-        "goal": "Enter the verification token, then submit the form.",
+        "goal": goal,
         "observation": {
             "page": snapshot.get("page"),
             "outline": snapshot.get("outline"),

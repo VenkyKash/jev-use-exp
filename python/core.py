@@ -4,6 +4,7 @@ import math
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Literal, Mapping
+from urllib.parse import urlsplit
 
 Outcome = Literal["verified", "refuted", "unknown", "abstained", "budget_exhausted"]
 
@@ -341,3 +342,91 @@ def classify(submitted: str | None, token: str, *, steps: int, max_steps: int) -
     if steps >= max_steps:
         return "budget_exhausted"
     return "unknown"
+
+
+@dataclass(frozen=True)
+class BrowserTask:
+    """Declarative public-web research inputs, not selectors or an action script."""
+    goal: str
+    start_url: str
+    allowed_hosts: tuple[str, ...]
+    search_text: str
+    navigation_terms: tuple[str, ...]
+    observation_queries: tuple[str, ...]
+
+    @classmethod
+    def parse(cls, raw):
+        if not isinstance(raw, dict) or set(raw) != set(cls.__annotations__):
+            raise ValueError("invalid browser task fields")
+        for key in ("goal", "start_url", "search_text"):
+            if not isinstance(raw[key], str) or not raw[key].strip() or len(raw[key]) > 4000:
+                raise ValueError("invalid browser task text")
+        for key in ("allowed_hosts", "navigation_terms", "observation_queries"):
+            if not isinstance(raw[key], list) or not 1 <= len(raw[key]) <= 12 or any(
+                not isinstance(s, str) or not s.strip() or len(s) > 200 for s in raw[key]
+            ):
+                raise ValueError("invalid browser task terms")
+        task = cls(**{k: tuple(v) if isinstance(v, list) else v for k, v in raw.items()})
+        task.check_url(task.start_url)
+        return task
+
+    def check_url(self, url):
+        parsed = urlsplit(url)
+        if (parsed.scheme != "https" or parsed.hostname not in self.allowed_hosts
+                or parsed.username or parsed.password or parsed.port not in (None, 443)):
+            raise ValueError("page outside approved HTTPS hosts")
+
+
+def build_browser_candidates(snapshot: dict, task: BrowserTask) -> list[Candidate]:
+    """Search and task-relevant links only; no generic form/edit buttons."""
+    task.check_url(snapshot["page"]["url"])
+    common = {"target_id": snapshot["target_id"], "tab_id": snapshot["tab_id"]}
+    generation = snapshot.get("snapshot", {}).get("id")
+    if not isinstance(generation, str) or not generation:
+        raise ValueError("missing browser snapshot identity")
+    candidates = []
+    seen = set()
+    for row in snapshot.get("refs", []):
+        ref = row.get("ref")
+        if not isinstance(ref, str) or not ref.startswith(generation + ":") or ref in seen:
+            raise ValueError("duplicate or stale browser reference")
+        seen.add(ref)
+        name = row.get("name") or ""
+        if not isinstance(name, str):
+            raise ValueError("invalid accessible name")
+        role = row.get("role")
+        actions = row.get("actions", [])
+        if row.get("states", {}).get("disabled") or row.get("visibility") == "hidden":
+            continue
+        is_search = role == "searchbox" or (role == "textbox" and "search" in name.casefold())
+        if is_search and "type" in actions and row.get("value") != task.search_text:
+            candidates.append(Candidate("type-" + ref, f"Search field {name!r}: enter {task.search_text!r}.",
+                "browser_type", {**common, "ref": ref, "text": task.search_text, "replace": True}))
+        # The input/submit distinction keeps edits, login, and unrelated buttons out.
+        search_button = role == "button" and name.strip().casefold() in {"search", "search wikipedia", "go"}
+        relevant_link = role == "link" and name.strip().casefold() in {term.casefold() for term in task.navigation_terms}
+        if "click" in actions and (search_button or relevant_link):
+            candidates.append(Candidate("click-" + ref, f"Follow {role} {name!r}.", "browser_click",
+                {**common, "ref": ref, "input_route": "dom_event"}))
+    for row in snapshot.get("content_refs", []):
+        ref, name = row.get("ref"), row.get("name") or ""
+        if row.get("role") not in {"region", "article"} or not isinstance(name, str):
+            continue
+        if not any(term.casefold() in name.casefold() for term in task.observation_queries + task.navigation_terms):
+            continue
+        if not isinstance(ref, str) or not ref.startswith(generation + ":") or ref in seen:
+            raise ValueError("duplicate or stale content reference")
+        seen.add(ref)
+        candidates.append(Candidate("scope-" + ref, f"Read the full {row['role']} {name!r}, including surrounding source text.",
+            "get_browser_state", {**common, "snapshot_format": "semantic_v2", "scope_ref": ref}))
+    for i, query in enumerate(task.observation_queries):
+        candidates.append(Candidate(f"read-{i}", f"Read page evidence matching {query!r}; does not search the website.",
+            "get_browser_state", {**common, "snapshot_format": "semantic_v2", "query": query}))
+    continuation = snapshot.get("snapshot", {}).get("continuation")
+    if continuation:
+        candidates.append(Candidate("read-more", "Read the next available page-evidence segment.",
+            "get_browser_state", {**common, "snapshot_format": "semantic_v2", "continuation": continuation}))
+    candidates.append(Candidate("finish", "Stop and hand collected source evidence to the summarizer if it answers the goal; this is not independent verification.", None, {}))
+    if len(candidates) > 62:
+        raise ValueError("research candidate limit exceeded")
+    return candidates + _reserved_candidates()

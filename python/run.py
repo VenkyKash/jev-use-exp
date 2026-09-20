@@ -15,6 +15,8 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 from core import (
+    BrowserTask,
+    build_browser_candidates,
     VisualObservation,
     VisualObservationError,
     build_candidates,
@@ -22,7 +24,7 @@ from core import (
     parse_visual_regions,
     validate_choice,
 )
-from jev_adapter import choose_live, choose_mock_adapter
+from jev_adapter import choose_live, choose_mock_adapter, choose_with_typesafe
 
 
 def fixture_state(fixture_url: str) -> dict[str, str | None]:
@@ -145,20 +147,38 @@ async def wait_for_window(driver: Driver, pid: int) -> dict[str, Any]:
 
 def write_event(log_path: Path | None, event: dict[str, Any]) -> None:
     line = json.dumps(event, sort_keys=True)
-    print(line)
+    if log_path and event.get("event") == "browser_evidence":
+        snapshot = event["snapshot"]
+        print(json.dumps(dict(event="browser_evidence_saved", step=event["step"],
+                              page=snapshot.get("page"), snapshot=snapshot.get("snapshot"))), flush=True)
+    else:
+        print(line, flush=True)
     if log_path:
         with log_path.open("a", encoding="utf-8") as stream:
             stream.write(line + "\n")
 
 
 async def run(args: argparse.Namespace) -> str:
+    task = BrowserTask.parse(json.loads(Path(args.task).read_text())) if getattr(args, "task", None) else None
+    if task and args.provider != "live":
+        raise ValueError("browser research requires --provider live; no mock fallback")
+    if task and not os.getenv("TYPESAFE_API_KEY"):
+        raise ValueError("TYPESAFE_API_KEY required before browser setup")
     token = args.token or f"jev-{uuid.uuid4().hex[:10]}"
     label = f"jev-python-{uuid.uuid4().hex[:8]}"
     history: list[dict[str, Any]] = []
     log_path = Path(args.log) if args.log else None
     if log_path:
-        log_path.write_text("", encoding="utf-8")
-    reset_fixture(args.fixture_url)
+        if task:
+            with log_path.open("x"):
+                pass
+        else:
+            log_path.write_text("", encoding="utf-8")
+    if task and args.dry_run:
+        write_event(log_path, {"event": "setup_planned", "start_url": task.start_url})
+        return "dry_run"
+    if not task:
+        reset_fixture(args.fixture_url)
 
     params = StdioServerParameters(command=os.getenv("CUA_DRIVER_BIN", "cua-driver"), args=["mcp"])
     async with stdio_client(params) as (read, write):
@@ -168,6 +188,11 @@ async def run(args: argparse.Namespace) -> str:
             available_tools = {tool.name for tool in advertised_tools}
             capture_bound_click = supports_capture_bound_click(advertised_tools)
             driver = Driver(session, label)
+            if task:
+                required = {"browser_prepare", "list_windows", "get_browser_state", "browser_navigate", "browser_type", "browser_click"}
+                if not required.issubset(available_tools):
+                    raise ValueError("required browser tools unavailable")
+                write_event(log_path, {"event": "browser_capabilities", "tools": sorted(required)})
             prepared = await driver.call(
                 "browser_prepare",
                 {"allow_launch": True, "profile": {"mode": "isolated_new"}},
@@ -181,8 +206,11 @@ async def run(args: argparse.Namespace) -> str:
             tab_id = select_tab_id(bound["tabs"])
             await driver.call(
                 "browser_navigate",
-                {"target_id": target_id, "tab_id": tab_id, "url": args.fixture_url},
+                {"target_id": target_id, "tab_id": tab_id, "url": task.start_url if task else args.fixture_url},
             )
+
+            if task:
+                return await run_research_loop(driver, task, target_id, tab_id, args.max_steps, log_path)
 
             for step in range(1, args.max_steps + 1):
                 oracle = fixture_state(args.fixture_url)
@@ -317,6 +345,66 @@ async def run(args: argparse.Namespace) -> str:
             return outcome
 
 
+async def run_research_loop(driver, task, target_id, tab_id, max_steps, log_path, chooser=None):
+    """Reuse the browser adapter and immutable actions; return evidence, not a truth verdict."""
+    from native_audit import audited_client
+    from native_errors import error_details
+    from contextlib import nullcontext
+    import hashlib
+    emit = lambda event: write_event(log_path, event)
+    history, visits = [], {}
+    snapshot = None
+    # Tests inject a chooser explicitly; CLI always uses the audited real SDK.
+    with (nullcontext(None) if chooser else audited_client(emit)) as client:
+        for step in range(1, max_steps + 1):
+            if snapshot is None:
+                snapshot = await driver.call("get_browser_state", dict(target_id=target_id, tab_id=tab_id, snapshot_format="semantic_v2"))
+            if snapshot.get("target_id") != target_id or snapshot.get("tab_id") != tab_id:
+                raise ValueError("browser evidence target mismatch")
+            try:
+                task.check_url(snapshot["page"]["url"])
+            except ValueError:
+                emit(dict(event="outcome", outcome="outside_allowed_hosts"))
+                return "outside_allowed_hosts"
+            emit(dict(event="browser_evidence", step=step, snapshot=snapshot))
+            fingerprint = hashlib.sha256(json.dumps([snapshot.get("page", {}).get("url"), snapshot.get("outline")], sort_keys=True).encode()).hexdigest()
+            visits[fingerprint] = visits.get(fingerprint, 0) + 1
+            if visits[fingerprint] > 3:
+                emit(dict(event="outcome", outcome="no_progress"))
+                return "no_progress"
+            candidates = build_browser_candidates(snapshot, task)
+            emit(dict(event="browser_candidates", step=step,
+                      candidates=[dict(id=c.id, description=c.description) for c in candidates]))
+            try:
+                if chooser:
+                    choice, confidence, probabilities = await chooser(candidates, snapshot, history)
+                else:
+                    choice, confidence, probabilities = await asyncio.to_thread(
+                        choose_with_typesafe, client, candidates, snapshot, None, history[-12:], goal=task.goal)
+                candidate = validate_choice(choice, candidates)
+            except Exception as error:
+                emit(dict(event="outcome", outcome="provider_failed", **error_details(error)))
+                return "provider_failed"
+            emit(dict(event="decision", step=step, selected_id=choice, confidence=confidence, probabilities=probabilities))
+            if choice in {"finish", "abstain"}:
+                outcome = "evidence_collected" if choice == "finish" else "abstained"
+                emit(dict(event="outcome", outcome=outcome, independently_verified=False))
+                return outcome
+            history.append(dict(candidate=choice, description=candidate.description))
+            snapshot = None
+            if candidate.tool:
+                emit(dict(event="dispatch", step=step, tool=candidate.tool, arguments=dict(candidate.arguments)))
+                try:
+                    result = await driver.call(candidate.tool, dict(candidate.arguments))
+                except Exception as error:
+                    emit(dict(event="outcome", outcome="unknown", **error_details(error)))
+                    return "unknown"  # Never retry uncertain actions.
+                if candidate.tool == "get_browser_state":
+                    snapshot = result  # Consume this generation before requesting another.
+        emit(dict(event="outcome", outcome="budget_exhausted"))
+        return "budget_exhausted"
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--provider", choices=("mock", "live"), default="mock")
@@ -324,16 +412,30 @@ def parse_args() -> argparse.Namespace:
         "--fixture-url", type=validate_fixture_url, default="http://127.0.0.1:8765/"
     )
     parser.add_argument("--token")
+    parser.add_argument("--task", help="declarative public-web research JSON; preserves the fixture demo when omitted")
     parser.add_argument("--max-steps", type=int, default=4)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--log", help="optional JSONL output path")
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.task and not 1 <= args.max_steps <= 50:
+        parser.error("max steps must be 1..50")
+    return args
 
 
 def main() -> None:
     args = parse_args()
-    outcome = asyncio.run(run(args))
-    raise SystemExit(0 if outcome == "verified" or args.dry_run else 1)
+    async def bounded():
+        return await asyncio.wait_for(run(args), 180) if args.task else await run(args)
+    try:
+        outcome = asyncio.run(bounded())
+    except Exception as error:
+        if not args.task:
+            raise
+        from native_errors import error_details
+        # Setup may have failed because this log already exists; never append to it.
+        write_event(None, dict(event="outcome", outcome="unknown", **error_details(error)))
+        outcome = "unknown"
+    raise SystemExit(0 if outcome in {"verified", "evidence_collected"} or args.dry_run else 1)
 
 
 if __name__ == "__main__":

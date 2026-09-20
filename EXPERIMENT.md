@@ -1,8 +1,9 @@
 # Jev native v0
 
 This is an independent experimental Git repository copied from `jev-use`.
-The unchanged baseline is commit `667aca5`. The original browser runners and
-their Python/TypeScript behavior are preserved. New native functionality is
+The unchanged baseline is commit `667aca5`. The original browser demo mode and
+its Python/TypeScript behavior are preserved. The Python browser modules now also
+support [task-driven research](reports/browser-research.md). New native functionality is
 Python-only and currently gated to macOS accessibility roles.
 
 ## What works in v0

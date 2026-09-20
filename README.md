@@ -3,7 +3,9 @@
 This folder is the independent `jev-use-exp` repository. See
 [EXPERIMENT.md](EXPERIMENT.md) for the new native Python v0, its limitations,
 evaluation commands, and rollback instructions. The remainder of this README
-documents the preserved browser baseline.
+documents the preserved browser baseline. The new task-driven browser mode reuses
+the Python core, adapter, and runner; see [browser research](reports/browser-research.md)
+for its command, live evidence, and limits.
 
 `jev-use` is a public-preview recipe that uses TypeSafe Jev to choose the next browser action
 while Cua Driver observes the page, performs that action, and verifies the
