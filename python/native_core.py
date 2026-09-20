@@ -69,6 +69,7 @@ class Observation:
     elements: tuple[Element, ...]
     excluded_menu_elements: int = 0
     complete: bool = True
+    readback_text: str = ""
 
     def compact(self) -> list[dict[str, Any]]:
         return [dict(id=e.index, role=e.role, label=e.label, value=e.value,
@@ -77,7 +78,7 @@ class Observation:
 
     def fingerprint(self) -> str:
         # Snapshot tokens rotate even when the UI does not change.
-        return hashlib.sha256(json.dumps(self.compact(), sort_keys=True).encode()).hexdigest()
+        return hashlib.sha256(json.dumps([self.compact(), self.readback_text], sort_keys=True).encode()).hexdigest()
 
 
 @dataclass(frozen=True)

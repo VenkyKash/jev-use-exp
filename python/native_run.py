@@ -21,6 +21,7 @@ from native_driver import NativeDriver, select_window
 from native_errors import error_details
 from native_audit import audited_client
 from native_jev import JevChooser, decision_request, validate_decision
+from evidence import evidence_handoff
 
 
 async def run_loop(task, driver, chooser, emit, *, target=None, max_steps=24,
@@ -56,6 +57,13 @@ async def run_loop(task, driver, chooser, emit, *, target=None, max_steps=24,
         emit(dict(event="target_bound", pid=pid, window_id=window_id,
                   rule="unique_named_or_only_window"))
     observation = await driver.observe(*target) if target else None
+    def handoff(reason):
+        if observation.readback_text:
+            emit(evidence_handoff(task.goal,
+                 dict(kind="native_window", app=task.app, pid=observation.pid,
+                      window_id=observation.window_id, snapshot_id=observation.id,
+                      scope="window text before system menu tree"),
+                 observation.readback_text, reason=reason, complete=None))
     emit(dict(event="observation", snapshot_id=observation.id, elements=observation.compact()))
     visits = {observation.fingerprint(): 1} if observation else {}
     for step in range(max_steps):
@@ -73,14 +81,19 @@ async def run_loop(task, driver, chooser, emit, *, target=None, max_steps=24,
             validate_decision(choice, request, minimum_confidence)
         except Exception as error:
             emit(dict(event="decision_failed", decision_id=decision_id, **error_details(error)))
+            handoff("decision_failed")
             return "provider_failed"
         emit(dict(event="decision", decision_id=decision_id, **asdict(choice),
                   decision_ms=round((time.monotonic()-started)*1000, 2)))
         candidate = candidates.resolve(choice.selected_id, observation.id if observation else "startup")
         if candidate.id == "abstain":
+            handoff("jev_abstained")
             return "abstained"
         if dry_run:
             return "dry_run"  # No launch, click, typing, or navigation.
+        if candidate.id == "review":
+            handoff("jev_requested_review")
+            return "review_required"
         before = observation.fingerprint() if observation else None
         started = time.monotonic()
         result = None
@@ -116,10 +129,13 @@ async def run_loop(task, driver, chooser, emit, *, target=None, max_steps=24,
             fingerprint = observation.fingerprint()
             visits[fingerprint] = visits.get(fingerprint, 0)+1
             if changed and visits[fingerprint] >= 3:
+                handoff("repeated_state")
                 return "repeated_state"
         stalled = 0 if changed else stalled+1
         if stalled >= no_progress_limit:
+            handoff("no_progress")
             return "no_progress"
+    handoff("budget_exhausted")
     return "budget_exhausted"
 
 
@@ -202,7 +218,7 @@ def main():
     finally:
         if stream:
             stream.close()
-    raise SystemExit(0 if outcome in {"verified", "dry_run", "inspected"} else 1)
+    raise SystemExit(0 if outcome in {"verified", "review_required", "dry_run", "inspected"} else 1)
 
 
 if __name__ == "__main__":

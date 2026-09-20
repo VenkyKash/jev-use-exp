@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from typing import Any
+import re
 
 from jsonschema import Draft202012Validator
 
@@ -104,7 +105,14 @@ def normalize(raw: dict[str, Any], pid: int, window_id: int) -> Observation:
     complete = raw.get("elements_complete", True)
     if type(complete) is not bool:
         raise DiagnosticError("invalid_completeness", "elements_complete must be boolean")
-    return Observation(snapshot, pid, window_id, tuple(scoped), excluded, complete)
+    text = raw.get("tree_markdown", "")
+    if not isinstance(text, str):
+        raise ValueError("invalid tree text")
+    # Separate non-actionable evidence; never invent element refs from markdown.
+    text = re.split(r"(?m)^- (?:\[\d+\] )?AXMenuBar\b", text, maxsplit=1)[0]
+    if len(text) > 64000:
+        raise ValueError("readback text exceeds v0 limit")
+    return Observation(snapshot, pid, window_id, tuple(scoped), excluded, complete, text)
 
 
 class NativeDriver:

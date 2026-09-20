@@ -16,6 +16,13 @@ logs untracked; they may contain user-supplied text and UI content.
 
 ## Notes to self.
 
+- Jev navigates; an evidence_handoff asks the calling assistant to review or
+  answer. Neither finish nor review proves success. Preserve failure evidence.
+  Calculator Clear may remove only the current operand; All Clear resets the
+  expression. Judge reset from readback, not the requested click or tool success.
+  Probability totals at 0.99/1.01 require a tiny floating-point boundary allowance
+  to honor the intended inclusive 1% tolerance, not a broader policy relaxation.
+
 - Reuse original browser setup/adapter for task-driven research. Keyword queries
   can return fragments; offer scoped region reads before treating evidence as
   sufficient. Link labels do not prove destination: host checks happen after

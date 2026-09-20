@@ -109,7 +109,7 @@ class BrowserResearchLoopTest(unittest.IsolatedAsyncioTestCase):
         driver = Driver()
         with patch("run.write_event") as emit:
             outcome = await run_research_loop(driver, task(), "target", "tab", 3, None, chooser)
-        self.assertEqual(outcome, "evidence_collected")
+        self.assertEqual(outcome, "review_required")
         self.assertEqual(requests, ["p1", "p2"])
         self.assertEqual(len(driver.calls), 2)
         self.assertTrue(any(c.args[1]["event"] == "browser_evidence" for c in emit.call_args_list))

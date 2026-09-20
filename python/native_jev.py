@@ -24,6 +24,7 @@ def decision_request(task: Task, observation: Observation | None,
             "excluded_menu_elements": observation.excluded_menu_elements if observation else 0,
             "complete": observation.complete if observation else True,
             "elements": observation.compact() if observation else [],
+            "readback_text": observation.readback_text if observation else "",
             "inputs": list(task.inputs),
             "history": [asdict(step) for step in history[-12:]],
             "remaining_decisions": remaining,
@@ -44,7 +45,8 @@ def validate_decision(choice: Decision, request: dict, minimum_confidence: float
     values = list(choice.probabilities.values())
     if any(not math.isfinite(p) or not 0 <= p <= 1 for p in values):
         raise DiagnosticError("invalid_probability", "invalid candidate probability")
-    if not math.isclose(sum(values), 1, abs_tol=0.01):
+    # Preserve the intended inclusive one-percent rounding tolerance at 0.99/1.01.
+    if not math.isclose(sum(values), 1, rel_tol=0, abs_tol=0.01 + 1e-12):
         raise DiagnosticError("probability_sum", "candidate probabilities must sum to one", probability_sum=sum(values))
 
 

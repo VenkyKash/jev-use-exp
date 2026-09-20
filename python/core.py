@@ -426,7 +426,7 @@ def build_browser_candidates(snapshot: dict, task: BrowserTask) -> list[Candidat
     if continuation:
         candidates.append(Candidate("read-more", "Read the next available page-evidence segment.",
             "get_browser_state", {**common, "snapshot_format": "semantic_v2", "continuation": continuation}))
-    candidates.append(Candidate("finish", "Stop and hand collected source evidence to the summarizer if it answers the goal; this is not independent verification.", None, {}))
+    candidates.append(Candidate("finish", "Hand the relevant source passage to the calling assistant for review and answering. You navigate; do not answer the question yourself or claim verification.", None, {}))
     if len(candidates) > 62:
         raise ValueError("research candidate limit exceeded")
     return candidates + _reserved_candidates()

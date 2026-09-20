@@ -387,7 +387,10 @@ async def run_research_loop(driver, task, target_id, tab_id, max_steps, log_path
                 return "provider_failed"
             emit(dict(event="decision", step=step, selected_id=choice, confidence=confidence, probabilities=probabilities))
             if choice in {"finish", "abstain"}:
-                outcome = "evidence_collected" if choice == "finish" else "abstained"
+                from evidence import browser_handoff
+                if choice == "finish":
+                    emit(browser_handoff(task.goal, snapshot))
+                outcome = "review_required" if choice == "finish" else "abstained"
                 emit(dict(event="outcome", outcome=outcome, independently_verified=False))
                 return outcome
             history.append(dict(candidate=choice, description=candidate.description))
@@ -435,7 +438,7 @@ def main() -> None:
         # Setup may have failed because this log already exists; never append to it.
         write_event(None, dict(event="outcome", outcome="unknown", **error_details(error)))
         outcome = "unknown"
-    raise SystemExit(0 if outcome in {"verified", "evidence_collected"} or args.dry_run else 1)
+    raise SystemExit(0 if outcome in {"verified", "review_required"} or args.dry_run else 1)
 
 
 if __name__ == "__main__":

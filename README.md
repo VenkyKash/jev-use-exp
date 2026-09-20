@@ -6,6 +6,8 @@ evaluation commands, and rollback instructions. The remainder of this README
 documents the preserved browser baseline. The new task-driven browser mode reuses
 the Python core, adapter, and runner; see [browser research](reports/browser-research.md)
 for its command, live evidence, and limits.
+The [evidence handoff contract](reports/evidence-handoff-tests.md) separates Jev
+navigation from the calling assistant's answer/review stage.
 
 `jev-use` is a public-preview recipe that uses TypeSafe Jev to choose the next browser action
 while Cua Driver observes the page, performs that action, and verifies the

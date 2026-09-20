@@ -51,7 +51,10 @@ def build_native_candidates(task: Task, observation: Observation,
                     candidates.append(Candidate(f"type-{element.index}-{number}",
                         f"Insert supplied text {text!r} at the cursor in {context}; this does not replace existing text.",
                         "type_text", arguments))
-    if len(candidates) > 62:
-        raise DiagnosticError("candidate_limit", "more than 62 executable options; v0 refuses instead of hiding alternatives",
+    maximum = 61 if observation.readback_text else 62
+    if len(candidates) > maximum:
+        raise DiagnosticError("candidate_limit", "candidate set exceeds 64 total choices; v0 refuses instead of hiding alternatives",
                               executable_options=len(candidates))
+    if observation.readback_text:
+        candidates.append(Candidate("review", "Hand the current readback evidence to the calling assistant when the requested actions are complete. Do not answer or claim verification yourself.", None, {}))
     return CandidateSet(observation.id, tuple(candidates + reserved()))
