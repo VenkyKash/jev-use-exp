@@ -1,0 +1,8 @@
+{
+  "goal": "Clear the calculator, then calculate 8 × 6 using its buttons.",
+  "app": "Calculator",
+  "inputs": [],
+  "checks": [
+    {"role": "AXStaticText", "label": "", "equals": "‎48"}
+  ]
+}

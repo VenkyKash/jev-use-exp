@@ -15,6 +15,11 @@ logs untracked; they may contain user-supplied text and UI content.
 
 ## Notes to self.
 
+- Calculator's non-actionable display rows were present in tree_markdown but
+  absent from structured elements (elements_complete=false). Do not equate an
+  unchanged actionable-element list with an unchanged UI, invent a Display label,
+  or claim automated verification from a separate diagnostic text readback.
+
 - Distinguish shared SDK transport from shared adapter behavior: the browser and
   native paths call different adapter functions. Compare retained responses
   offline before attributing failures to stricter validation; synthetic failures
