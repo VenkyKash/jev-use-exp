@@ -16,6 +16,11 @@ logs untracked; they may contain user-supplied text and UI content.
 
 ## Notes to self.
 
+- The user explicitly requested a native default confidence cutoff trial of 0.4
+  (previously 0.5). Keep it overridable, and distinguish accepting more actions
+  from improving their correctness. Context comparisons retain their explicit
+  historical 0.5 evaluation threshold unless separately changed.
+
 - Context-format experiments must keep goal, ordered choice IDs/descriptions,
   and SDK path fixed. Separate compact-current from before/after variants because
   prior-state text adds information. A better selected action at low confidence

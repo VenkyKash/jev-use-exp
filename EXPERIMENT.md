@@ -63,7 +63,7 @@ only reobserve/abstain afterward; it does not yet generate a free-text Jev repor
 in an existing directory and never overwrites a previous trace. `--seed` controls
 candidate-order permutations, not model randomness. Default limits are 24
 decisions, 180 seconds, three consecutive unchanged observations, and confidence
-0.5. SDK requests use a 10-second network timeout with retries disabled; thread
+0.4 (user-requested trial; not a calibrated safety guarantee). SDK requests use a 10-second network timeout with retries disabled; thread
 cleanup may outlast the run deadline. A timeout is `timeout_unknown`, never proof
 that the last action was not delivered.
 

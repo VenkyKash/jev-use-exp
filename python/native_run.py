@@ -25,7 +25,7 @@ from evidence import evidence_handoff
 
 
 async def run_loop(task, driver, chooser, emit, *, target=None, max_steps=24,
-                   no_progress_limit=3, minimum_confidence=.5, seed=0, dry_run=False,
+                   no_progress_limit=3, minimum_confidence=.4, seed=0, dry_run=False,
                    read_only=False):
     history = []
     stalled = 0
@@ -150,7 +150,7 @@ def parse_args():
     parser.add_argument("--read-only", action="store_true", help="allow explicit app setup, then only observation or abstention")
     parser.add_argument("--max-steps", type=int, default=24)
     parser.add_argument("--timeout", type=float, default=180)
-    parser.add_argument("--minimum-confidence", type=float, default=.5)
+    parser.add_argument("--minimum-confidence", type=float, default=.4)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--log", type=Path, help="new JSONL file, never overwritten; contains UI and input text")
     args = parser.parse_args()
