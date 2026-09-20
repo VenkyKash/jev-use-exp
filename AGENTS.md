@@ -16,6 +16,10 @@ logs untracked; they may contain user-supplied text and UI content.
 
 ## Notes to self.
 
+- Skill packaging was explicitly gated on the remaining live tests passing.
+  Do not treat successful unit tests or a blocked preflight as a passed app task.
+  An upgrade/device-compatibility prompt is not permission to migrate user data.
+
 - The user explicitly requested a native default confidence cutoff trial of 0.4
   (previously 0.5). Keep it overridable, and distinguish accepting more actions
   from improving their correctness. Context comparisons retain their explicit
