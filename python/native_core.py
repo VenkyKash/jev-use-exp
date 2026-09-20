@@ -67,6 +67,8 @@ class Observation:
     pid: int
     window_id: int
     elements: tuple[Element, ...]
+    excluded_menu_elements: int = 0
+    complete: bool = True
 
     def compact(self) -> list[dict[str, Any]]:
         return [dict(id=e.index, role=e.role, label=e.label, value=e.value,
@@ -96,6 +98,8 @@ class StepResult:
 
 def verify(task: Task, observation: Observation) -> bool:
     """Exact unique element value checks, never model or action-response proof."""
+    if not observation.complete:
+        return False
     for check in task.checks:
         matches = [e for e in observation.elements
                    if e.role == check.role and e.label == check.label and not e.web]

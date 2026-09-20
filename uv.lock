@@ -233,6 +233,7 @@ name = "cua-driver-jev-use-example"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "httpx2" },
     { name = "jsonschema" },
     { name = "mcp" },
     { name = "typesafe-sdk" },
@@ -240,6 +241,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "httpx2", specifier = ">=2.13,<3" },
     { name = "jsonschema", specifier = ">=4.26,<5" },
     { name = "mcp", specifier = ">=1.26.0,<2" },
     { name = "typesafe-sdk", specifier = ">=0.6.0,<1" },
