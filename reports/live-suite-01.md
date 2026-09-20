@@ -3,6 +3,12 @@
 Implementation tested: `95515aa` (unchanged during testing).
 Driver: `0.28.2`. Observed provider model: `jev-1.13.0`.
 
+**Audit correction:** the user subsequently reported no matching requests in the
+Jev dashboard. This pass retained SDK-level traces, not HTTP receipts or provider
+request IDs. The counts below establish local SDK invocations and local dispatches,
+not dashboard-confirmed service usage. Account attribution remains unresolved;
+see `api-audit-and-repairs.md` for the later instrumented probe.
+
 ## Outcome
 
 **0 of 10 tasks verified.** Most cases were blocked at initialization or
@@ -10,8 +16,8 @@ observation before a task-specific decision could reach Jev. This is not a
 10-task measure of Jev's reasoning success: its observed executable choices
 were app launches, each offered alongside reobserve and abstain.
 
-The key was available in the runner environment. There were **12 provider
-requests**: eight runner requests and four provider-only diagnostic requests.
+The key was available in the runner environment. There were **12 local SDK
+invocations**: eight runner invocations and four provider-only diagnostic invocations.
 SDK retries were disabled. Six accepted runner decisions dispatched `launch_app`
 (Calculator, TextEdit, Obsidian, Notes, Reminders, System Settings). Two Chrome
 runner decisions failed validation. All four separate Chrome diagnostic responses

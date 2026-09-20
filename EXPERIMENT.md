@@ -7,17 +7,25 @@ Python-only and currently gated to macOS accessibility roles.
 
 ## What works in v0
 
-- One persistent Driver MCP session with capability/schema checks.
+- One persistent Driver MCP session with capability/schema checks. A unique
+  titled window can be bound when the other windows are explicitly offscreen and
+  untitled. Multiple named documents or visible untitled windows remain ambiguous.
 - Jev chooses every mutation, including launch. No Codex API or fallback model.
-- A generic builder offers all supported native buttons and all supplied text
-  inputs for editable fields. It does not inspect the goal or verification checks.
+- A generic builder offers supported labelled controls and supplied text inputs
+  within window content. Application/system menu trees are excluded before
+  context/candidate limits; scope and excluded counts are disclosed to Jev.
+  It does not inspect the goal or verification checks.
 - Snapshot-bound immutable actions; background delivery only.
 - Compact recent history, shuffled option order, confidence/distribution checks.
-- Exact unique native element value checks, outside the provider request.
+- Exact unique native element value checks, outside the provider request. An
+  explicitly incomplete observation cannot establish completion.
 - Step/time/no-progress limits. An uncertain action is observed, never retried
   automatically. A refused action ends the run rather than silently escalating.
-- JSONL traces contain exact model inputs, choice, executable alternatives,
-  dispatch, and post-action observations. Treat traces as potentially sensitive.
+- JSONL traces contain exact model inputs, provider answers even when rejected,
+  executable alternatives, dispatch, and post-action observations. HTTP events
+  retain UTC time, endpoint, status, provider request ID, and local correlation
+  ID. Answer events include reported token usage. No Authorization headers or
+  raw HTTP bodies are logged. Treat traces as potentially sensitive.
 
 `native_core.py` contains models, `native_driver.py` the MCP adapter,
 `native_candidates.py` the generic builder, `native_jev.py` the provider boundary,
@@ -42,7 +50,7 @@ separate from the label for v0's exact check to work.
 
 Supply both `--pid` and `--window-id` to attach to an existing window. Otherwise
 Jev first chooses whether to launch the explicitly named app. If launch returns
-multiple windows, the runner reports `needs_window_selection` with their IDs;
+ambiguous windows, the runner reports `needs_window_selection` with their IDs;
 restart with the intended pair. It does not guess the largest window.
 
 `--dry-run` makes one Jev decision without a mutation, including without launching
@@ -83,15 +91,17 @@ automatic window switching, or embedded web content. App-specific adapters have
 not been added. A task may need unsupported actions and should then fail visibly.
 
 There is no general classifier for destructive/external actions: run only scoped
-test tasks in apps/windows you intend the agent to operate. Every enabled native
-button is an option, including cancel/reset/close. Accessibility readback is
+test tasks in apps/windows you intend the agent to operate. Labelled enabled
+controls may include cancel/reset/close. Accessibility readback is
 evidence of UI state, not proof that an external service persisted a transaction.
 The builder refuses over 62 executable choices; observation normalization refuses
-over 200 elements or explicit truncation rather than silently choosing a subset.
+over 200 content elements after explicit menu exclusion, over 2000 raw elements,
+or explicit truncation rather than silently choosing a goal-dependent subset.
 
 The provider must return probabilities for all candidates summing to one within
-0.01. This strict experimental policy is tested with fake SDK responses but still
-needs a credentialed Jev run; failure does not trigger a substitute chooser.
+0.01. Failure does not trigger a substitute chooser. Rejected answers and policy
+codes are retained for diagnosis; see the audit report for the unresolved
+dashboard/account attribution issue.
 
 ## Tests and rollback
 
@@ -132,5 +142,20 @@ not portable outside this checkout; native v0's tests do not need the parent.
   mutation were not run. The existing Calculator app was not running during the
   read-only preflight; no manual launch or Codex action sequence was substituted.
 
-The final dependency diff adds an explicit declaration for already-locked
-`jsonschema`; existing resolved dependency versions are unchanged.
+The initial dependency diff added an explicit declaration for already-locked
+`jsonschema`; HTTP auditing subsequently declared already-locked `httpx2`.
+Existing resolved dependency versions are unchanged.
+
+## HTTP audit and subsequent repairs
+
+See [api-audit-and-repairs.md](reports/api-audit-and-repairs.md). To make a single
+identifiable diagnostic request without any desktop action:
+
+```sh
+uv run --frozen python python/probe_jev.py --log runs/new-probe.jsonl
+```
+
+The log includes an opaque probe marker and a truncated SHA-256 fingerprint of
+the configured key for local comparison; never share the key itself. HTTP receipts
+are client-side evidence, not confirmation of which dashboard workspace billed
+the request. A missing request ID remains null rather than being invented.
