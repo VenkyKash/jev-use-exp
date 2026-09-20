@@ -5,6 +5,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from native_core import Task, verify
 from native_driver import normalize
+from native_candidates import build_native_candidates
 
 
 def task():
@@ -46,3 +47,31 @@ class NativeModelsTest(unittest.TestCase):
     def test_inputs_are_bounded(self):
         with self.assertRaises(ValueError):
             Task.parse(dict(goal="x", app="y", inputs=["z"] * 9, checks=[]))
+
+
+class NativeCandidatesTest(unittest.TestCase):
+    def test_all_buttons_offered_independent_of_goal_or_verifier(self):
+        raw = snapshot()
+        raw["elements"].append(dict(element_index=3, role="AXButton", label="Cancel"))
+        obs = normalize(raw, 1, 2)
+        built = build_native_candidates(task(), obs, lambda *_: True)
+        self.assertEqual({c.id for c in built.candidates},
+                         {"type-0-0", "click-1", "click-3", "reobserve", "abstain"})
+        other = Task("Different goal", "Different app", task().inputs, ())
+        self.assertEqual(built, build_native_candidates(other, obs, lambda *_: True))
+
+    def test_stale_choices_and_argument_mutation_rejected(self):
+        built = build_native_candidates(task(), normalize(snapshot(), 1, 2), lambda *_: True)
+        with self.assertRaisesRegex(ValueError, "stale"):
+            built.resolve("click-1", "s2")
+        with self.assertRaises(ValueError):
+            built.resolve("invented", "s1")
+        with self.assertRaises(TypeError):
+            built.resolve("click-1", "s1").arguments["pid"] = 999
+
+    def test_disabled_web_and_unsupported_actions_not_offered(self):
+        raw = snapshot()
+        raw["elements"][0]["in_web_content"] = True
+        raw["elements"][1]["enabled"] = False
+        self.assertEqual(len(build_native_candidates(task(), normalize(raw, 1, 2), lambda *_: True).candidates), 2)
+        self.assertEqual(len(build_native_candidates(task(), normalize(snapshot(), 1, 2), lambda *_: False).candidates), 2)
