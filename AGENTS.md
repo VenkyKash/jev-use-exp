@@ -15,6 +15,11 @@ logs untracked; they may contain user-supplied text and UI content.
 
 ## Notes to self.
 
+- Distinguish shared SDK transport from shared adapter behavior: the browser and
+  native paths call different adapter functions. Compare retained responses
+  offline before attributing failures to stricter validation; synthetic failures
+  demonstrate a possibility, not the cause of a historical failure.
+
 - User prefers small reversible commits and a separate Git repository.
 - Locate source files before content searches; avoid scanning generated runs,
   virtual environments, or the entire monorepo for common terms.
