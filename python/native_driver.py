@@ -74,6 +74,8 @@ class NativeDriver:
         if schema is None:
             return False
         args = dict(arguments)
+        if not set(args).issubset(schema.get("properties", {})):
+            return False
         if "session" in schema.get("properties", {}):
             args["session"] = self.label
         return Draft202012Validator(schema).is_valid(args)

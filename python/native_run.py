@@ -26,6 +26,7 @@ async def run_loop(task, driver, chooser, emit, *, target=None, max_steps=24,
     history = []
     stalled = 0
     observation = await driver.observe(*target) if target else None
+    visits = {observation.fingerprint(): 1} if observation else {}
     for step in range(max_steps):
         if observation and verify(task, observation):
             return "verified"
@@ -98,6 +99,10 @@ async def run_loop(task, driver, chooser, emit, *, target=None, max_steps=24,
             emit(dict(event="observation", snapshot_id=observation.id, elements=observation.compact()))
             if verify(task, observation):
                 return "verified"
+            fingerprint = observation.fingerprint()
+            visits[fingerprint] = visits.get(fingerprint, 0)+1
+            if changed and visits[fingerprint] >= 3:
+                return "repeated_state"
         stalled = 0 if changed else stalled+1
         if stalled >= no_progress_limit:
             return "no_progress"
@@ -157,6 +162,8 @@ async def execute(args, emit):
 
 def main():
     args = parse_args()
+    if not (args.inspect or args.doctor) and not os.getenv("TYPESAFE_API_KEY"):
+        raise SystemExit("TYPESAFE_API_KEY is required; no app was opened and no fallback will run")
     if sys.platform != "darwin" and not args.doctor:
         raise SystemExit("native v0 currently supports macOS AX roles only")
     stream = args.log.open("x", encoding="utf-8") if args.log else None

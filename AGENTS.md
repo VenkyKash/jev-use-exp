@@ -20,3 +20,5 @@ logs untracked; they may contain user-supplied text and UI content.
   virtual environments, or the entire monorepo for common terms.
 - Unsupported Driver behavior is a limitation to report, not a reason to widen
   scope or silently switch to foreground/pixel input.
+- The installed uv 0.6.17 rewrites newer lockfile metadata when adding a dependency.
+  Preserve baseline lockfile formatting and resolved versions; review for churn.

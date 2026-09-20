@@ -4,7 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from native_core import Task, verify
-from native_driver import normalize
+from native_driver import normalize, NativeDriver, DriverFailure
 from native_candidates import build_native_candidates
 from native_core import Decision
 from native_jev import decision_request, validate_decision
@@ -173,3 +173,46 @@ class NativeLoopTest(unittest.IsolatedAsyncioTestCase):
         chooser = ScriptedTestChooser(["type-0-0", "type-1-1", "click-2"])
         self.assertEqual(await run_loop(self.form_task(), driver, chooser, lambda e: None,
                                        target=(1,2), max_steps=3), "verified")
+
+    async def test_changing_but_cyclic_ui_stops(self):
+        driver = FixtureDriver()
+        chooser = ScriptedTestChooser(["type-0-0", "click-3"]*3)
+        self.assertEqual(await run_loop(self.form_task(), driver, chooser, lambda e: None,
+                                       target=(1,2)), "repeated_state")
+        self.assertEqual(len(driver.calls), 4)
+
+
+class NativeTransportTest(unittest.IsolatedAsyncioTestCase):
+    async def test_schema_and_refusal_no_automatic_retry(self):
+        from types import SimpleNamespace
+        class Session:
+            calls = []
+            async def call_tool(self, name, arguments):
+                self.calls.append((name, arguments))
+                return SimpleNamespace(isError=False, structuredContent={"status": "refused"})
+        session = Session()
+        schema = {"type": "object", "properties": {"pid": {"type": "integer"},
+                    "session": {"type": "string"}}, "required": ["pid"]}
+        driver = NativeDriver(session, "test-session", {"click": schema})
+        self.assertFalse(driver.accepts("click", {"pid": "wrong"}))
+        self.assertFalse(driver.accepts("click", {"pid": 1, "capture_id": "unsupported"}))
+        with self.assertRaises(DriverFailure):
+            await driver.call("click", {"pid": 1})
+        self.assertEqual(session.calls, [("click", {"pid": 1, "session": "test-session"})])
+
+    async def test_jev_sdk_receives_exact_auditable_request(self):
+        from native_jev import JevChooser
+        from types import SimpleNamespace
+        requests = []
+        class Client:
+            def system_one(self, **kwargs):
+                requests.append(kwargs)
+                return SimpleNamespace(model="test-jev", choices={"candidate": SimpleNamespace(
+                    choice="click-1", confidence=.9,
+                    probabilities={"type-0-0": .05, "click-1": .9, "abstain": .025, "reobserve": .025})})
+        obs = normalize(snapshot(), 1, 2)
+        request = decision_request(task(), obs, build_native_candidates(task(), obs, lambda *_: True), [], 20, 1)
+        decision = await JevChooser(Client()).choose(request)
+        validate_decision(decision, request, .5)
+        self.assertEqual(requests[0]["state"], {"goal": task().goal, "observation": request["observation"]})
+        self.assertEqual(requests[0]["questions"]["candidate"].criteria, request["criteria"])

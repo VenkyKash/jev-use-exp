@@ -1,0 +1,8 @@
+{
+  "goal": "Clear the calculator, then calculate 17 × 23 using its buttons.",
+  "app": "Calculator",
+  "inputs": [],
+  "checks": [
+    {"role": "AXStaticText", "label": "Display", "equals": "391"}
+  ]
+}
