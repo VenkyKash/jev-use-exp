@@ -16,6 +16,11 @@ logs untracked; they may contain user-supplied text and UI content.
 
 ## Notes to self.
 
+- Context-format experiments must keep goal, ordered choice IDs/descriptions,
+  and SDK path fixed. Separate compact-current from before/after variants because
+  prior-state text adds information. A better selected action at low confidence
+  is not an executable success; do not promote a format based on two repetitions.
+
 - Jev navigates; an evidence_handoff asks the calling assistant to review or
   answer. Neither finish nor review proves success. Preserve failure evidence.
   Calculator Clear may remove only the current operand; All Clear resets the
