@@ -4,6 +4,7 @@ from typing import Callable
 
 from core import Candidate
 from native_core import Observation, Task
+from native_errors import DiagnosticError
 
 
 @dataclass(frozen=True)
@@ -29,7 +30,7 @@ def build_native_candidates(task: Task, observation: Observation,
                             accepts: Callable[[str, dict], bool]) -> CandidateSet:
     candidates = []
     for element in observation.elements:
-        if not element.enabled or element.web:
+        if not element.enabled or element.web or not element.label.strip():
             continue
         target = {"pid": observation.pid, "window_id": observation.window_id,
                   "delivery_mode": "background"}
@@ -51,7 +52,8 @@ def build_native_candidates(task: Task, observation: Observation,
                         f"Insert supplied text {text!r} at the cursor in {context}; this does not replace existing text.",
                         "type_text", arguments))
     if len(candidates) > 62:
-        raise ValueError("more than 62 executable options; v0 refuses instead of hiding alternatives")
+        raise DiagnosticError("candidate_limit", "more than 62 executable options; v0 refuses instead of hiding alternatives",
+                              executable_options=len(candidates))
     return CandidateSet(observation.id, tuple(candidates + reserved()))
 
 

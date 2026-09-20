@@ -9,6 +9,7 @@ from native_core import Task
 from native_fixture import FixtureDriver
 from native_jev import FirstCandidateBaseline, JevChooser
 from native_run import run_loop
+from native_audit import audited_client
 
 
 def cases():
@@ -53,9 +54,8 @@ def main():
             stream.write(json.dumps(event, sort_keys=True)+"\n")
             stream.flush()
         if args.provider == "live":
-            from typesafe_sdk import TypeSafeClient, RetryPolicy
-            with TypeSafeClient(timeout=10, retry=RetryPolicy(max_retries=0)) as client:
-                summary = asyncio.run(evaluate(JevChooser(client), emit))
+            with audited_client(emit) as client:
+                summary = asyncio.run(evaluate(JevChooser(client, emit=emit), emit))
         else:
             summary = asyncio.run(evaluate(FirstCandidateBaseline(), emit))
         summary["provider"] = args.provider

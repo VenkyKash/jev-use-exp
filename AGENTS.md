@@ -22,3 +22,8 @@ logs untracked; they may contain user-supplied text and UI content.
   scope or silently switch to foreground/pixel input.
 - The installed uv 0.6.17 rewrites newer lockfile metadata when adding a dependency.
   Preserve baseline lockfile formatting and resolved versions; review for churn.
+- SDK invocations and model-shaped responses are not dashboard-confirmed API
+  usage. Retain HTTP status, endpoint, UTC time, provider request ID and reported
+  token counts; distinguish local evidence from account/dashboard attribution.
+- Real macOS snapshots may include entire system menus and auxiliary windows.
+  Test their shapes; do not assume fixture-sized trees or exactly one window.

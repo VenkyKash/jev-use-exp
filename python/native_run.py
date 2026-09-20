@@ -17,7 +17,9 @@ from mcp.client.stdio import stdio_client
 
 from native_candidates import build_native_candidates, launch_candidates
 from native_core import StepResult, Task, verify
-from native_driver import NativeDriver
+from native_driver import NativeDriver, select_window
+from native_errors import error_details
+from native_audit import audited_client
 from native_jev import JevChooser, decision_request, validate_decision
 
 
@@ -41,7 +43,7 @@ async def run_loop(task, driver, chooser, emit, *, target=None, max_steps=24,
             choice = await chooser.choose(request)
             validate_decision(choice, request, minimum_confidence)
         except Exception as error:
-            emit(dict(event="decision_failed", decision_id=decision_id, error_type=type(error).__name__))
+            emit(dict(event="decision_failed", decision_id=decision_id, **error_details(error)))
             return "provider_failed"
         emit(dict(event="decision", decision_id=decision_id, **asdict(choice),
                   decision_ms=round((time.monotonic()-started)*1000, 2)))
@@ -60,7 +62,7 @@ async def run_loop(task, driver, chooser, emit, *, target=None, max_steps=24,
                 result = await driver.call(candidate.tool, dict(candidate.arguments))
             except Exception as error:
                 # Never repeat an uncertain mutation. Retain a fresh readback if possible.
-                emit(dict(event="action_failed", decision_id=decision_id, error_type=type(error).__name__))
+                emit(dict(event="action_failed", decision_id=decision_id, **error_details(error)))
                 if target:
                     try:
                         after = await driver.observe(*target)
@@ -76,17 +78,17 @@ async def run_loop(task, driver, chooser, emit, *, target=None, max_steps=24,
                 return "unknown"
             windows = result.get("windows", [])
             for _ in range(5):
-                if windows:
+                if select_window(windows, pid) is not None:
                     break
                 await asyncio.sleep(.2)
                 windows = (await driver.call("list_windows", {"pid": pid})).get("windows", [])
-            if len(windows) != 1:
+            window_id = select_window(windows, pid)
+            if window_id is None:
                 emit(dict(event="target_required", pid=pid, windows=windows))
                 return "needs_window_selection"
-            window_id = windows[0].get("window_id")
-            if type(window_id) is not int or window_id <= 0:
-                return "unknown"
             target = (pid, window_id)
+            emit(dict(event="target_bound", pid=pid, window_id=window_id,
+                      rule="unique_named_or_only_window"))
         if target:
             observation = await driver.observe(*target)
         changed = observation is not None and before != observation.fingerprint()
@@ -152,9 +154,8 @@ async def execute(args, emit):
                 observation = await driver.observe(args.pid, args.window_id)
                 emit(dict(event="observation", snapshot_id=observation.id, elements=observation.compact()))
                 return "inspected"
-            from typesafe_sdk import TypeSafeClient, RetryPolicy
-            with TypeSafeClient(timeout=10, retry=RetryPolicy(max_retries=0)) as client:
-                return await run_loop(task, driver, JevChooser(client), emit,
+            with audited_client(emit) as client:
+                return await run_loop(task, driver, JevChooser(client, emit=emit), emit,
                     target=(args.pid, args.window_id) if args.pid else None,
                     max_steps=args.max_steps, minimum_confidence=args.minimum_confidence,
                     seed=args.seed, dry_run=args.dry_run)
@@ -180,7 +181,7 @@ def main():
             return "timeout_unknown"
         except Exception as error:
             # Exception messages may contain credentials or application content.
-            emit(dict(event="error", error_type=type(error).__name__))
+            emit(dict(event="error", **error_details(error)))
             return "unknown"
     try:
         outcome = asyncio.run(bounded())
