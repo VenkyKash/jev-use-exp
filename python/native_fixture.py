@@ -35,10 +35,15 @@ class FixtureDriver:
         return normalize(dict(snapshot_id=sid, elements=rows), pid, window_id)
 
     async def call(self, tool, arguments):
-        self.calls.append((tool, arguments))
+        if tool != "list_windows":
+            self.calls.append((tool, arguments))
         if tool == "launch_app":
             return dict(pid=1, windows=[dict(window_id=2)])
-        token = arguments["element_token"]
+        if tool == "list_windows":
+            return dict(windows=[dict(window_id=2)])
+        token = arguments.get("element_token")
+        if token is None:
+            return {}
         sid, index = token.rsplit(":", 1)
         if sid != f"fixture-{self.version}":
             raise RuntimeError("stale_element_token")

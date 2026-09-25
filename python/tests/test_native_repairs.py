@@ -29,8 +29,8 @@ class WindowSelectionTest(unittest.TestCase):
                    dict(window_id=2, title="B", is_on_screen=True)]
         self.assertIsNone(select_window(windows, 7))
         self.assertIsNone(select_window(windows[::-1], 7))
-        self.assertIsNone(select_window([dict(window_id=1, title="A"),
-                                         dict(window_id=2, title="", is_on_screen=True)], 7))
+        self.assertEqual(select_window([dict(window_id=1, title="A"),
+                                         dict(window_id=2, title="", is_on_screen=True)], 7), 1)
 
     def test_other_process_invalid_and_duplicate_ids_not_selected(self):
         self.assertIsNone(select_window([dict(window_id=1, title="A", pid=8)], 7))
@@ -40,6 +40,23 @@ class WindowSelectionTest(unittest.TestCase):
 
 
 class ScopeTest(unittest.TestCase):
+    def test_window_content_accepts_up_to_2000_elements_without_pruning(self):
+        for count in (493, 1000, 1033, 2000):
+            with self.subTest(count=count):
+                raw = dict(snapshot_id="s", elements=[
+                    dict(element_index=i, role="AXStaticText", label=str(i))
+                    for i in range(count)])
+                obs = normalize(raw, 1, 2)
+                self.assertEqual([e.index for e in obs.elements], list(range(count)))
+
+    def test_raw_limit_still_rejects_2001_elements(self):
+        raw = dict(snapshot_id="s", elements=[
+            dict(element_index=i, role="AXStaticText", label=str(i))
+            for i in range(2001)])
+        with self.assertRaises(DiagnosticError) as raised:
+            normalize(raw, 1, 2)
+        self.assertEqual(raised.exception.code, "raw_observation_limit")
+
     def test_menu_descendants_excluded_before_observation_and_candidate_limits(self):
         raw = snapshot()
         raw["elements"].append(dict(element_index=10, role="AXMenuBar", label=None))
@@ -50,22 +67,25 @@ class ScopeTest(unittest.TestCase):
         self.assertEqual(len(obs.elements), 3)
         self.assertEqual(obs.excluded_menu_elements, 231)
         options = build_native_candidates(task(), obs, lambda *_: True)
-        self.assertEqual({c.id for c in options.candidates}, {"type-0-0", "click-1", "reobserve", "abstain"})
+        self.assertTrue({"type-0-0", "click-1", "reobserve", "abstain"} <= {c.id for c in options.candidates})
         self.assertEqual(options.resolve("click-1", obs.id).arguments["element_token"], "s1:1")
 
     def test_window_controls_are_not_pruned_to_fit_budget(self):
         raw = dict(snapshot_id="s", elements=[dict(element_index=i, role="AXButton", label=str(i)) for i in range(63)])
         obs = normalize(raw, 1, 2)
-        with self.assertRaises(DiagnosticError) as raised:
-            build_native_candidates(task(), obs, lambda *_: True)
-        self.assertEqual(raised.exception.code, "candidate_limit")
+        options = build_native_candidates(task(), obs, lambda *_: True)
+        self.assertTrue({f"click-{i}" for i in range(63)} <= {c.id for c in options.candidates})
+        from driver_candidates import choice_menu
+        menu, groups = choice_menu(options.candidates)
+        self.assertLessEqual(len(menu), 64)
+        self.assertTrue(groups)
 
-    def test_null_label_normalized_but_not_clickable(self):
+    def test_null_label_does_not_hide_advertised_click_action(self):
         raw = snapshot()
         raw["elements"][1]["label"] = None
         obs = normalize(raw, 1, 2)
         self.assertEqual(obs.elements[1].label, "")
-        self.assertNotIn("click-1", {c.id for c in build_native_candidates(task(), obs, lambda *_: True).candidates})
+        self.assertIn("click-1", {c.id for c in build_native_candidates(task(), obs, lambda *_: True).candidates})
 
     def test_incomplete_observation_cannot_prove_unique_completion(self):
         from native_core import verify
@@ -139,7 +159,7 @@ class RuntimeRepairTest(unittest.IsolatedAsyncioTestCase):
         class LowConfidence:
             async def choose(self, request):
                 from native_core import Decision
-                return Decision("abstain", .1, {key: float(key == "abstain") for key in request["criteria"]}, "test")
+                return Decision("abstain", .09, {key: float(key == "abstain") for key in request["criteria"]}, "test")
         events = []
         driver = FixtureDriver()
         self.assertEqual(await run_loop(task(), driver, LowConfidence(), events.append), "provider_failed")

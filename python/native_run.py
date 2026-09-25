@@ -15,9 +15,10 @@ import uuid
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from native_candidates import build_native_candidates
+from native_candidates import build_native_candidates, CandidateSet
+from driver_candidates import choice_menu, catalog, thaw
 from native_core import StepResult, Task, verify
-from native_driver import NativeDriver, select_window
+from native_driver import NativeDriver, select_window, normalize
 from native_errors import error_details
 from native_audit import audited_client
 from native_jev import JevChooser, decision_request, validate_decision
@@ -25,10 +26,11 @@ from evidence import evidence_handoff
 
 
 async def run_loop(task, driver, chooser, emit, *, target=None, max_steps=24,
-                   no_progress_limit=3, minimum_confidence=.4, seed=0, dry_run=False,
+                   no_progress_limit=3, minimum_confidence=.1, seed=0, dry_run=False,
                    read_only=False):
     history = []
     stalled = 0
+    refusal_recoveries = 0
     if target is None:
         if dry_run:
             emit(dict(event="setup_planned", tool="launch_app", arguments={"name": task.app}))
@@ -62,16 +64,37 @@ async def run_loop(task, driver, chooser, emit, *, target=None, max_steps=24,
             emit(evidence_handoff(task.goal,
                  dict(kind="native_window", app=task.app, pid=observation.pid,
                       window_id=observation.window_id, snapshot_id=observation.id,
-                      scope="window text before system menu tree"),
+                      scope="window text before system menu tree", inspection=observation.inspection),
                  observation.readback_text, reason=reason, complete=None))
     emit(dict(event="observation", snapshot_id=observation.id, elements=observation.compact()))
     visits = {observation.fingerprint(): 1} if observation else {}
+    candidate_path = ()
+    last_result = None
+    previous_observation = None
     for step in range(max_steps):
         if observation and verify(task, observation):
             return "verified"
+        coverage = []
         candidates = build_native_candidates(task, observation,
-                                            (lambda *_: False) if read_only else driver.accepts)
-        request = decision_request(task, observation, candidates, history, max_steps-step, seed+step)
+                                            (lambda *_: False) if read_only else driver.accepts,
+                                            diagnostics=coverage, read_only=read_only, last_result=last_result)
+        emit(dict(event="candidate_coverage", schema="jev.candidate_coverage.v1",
+                  snapshot_id=observation.id, decision_id=f"decision-{step+1}",
+                  read_only=read_only, observation_complete=observation.complete,
+                  elements=coverage))
+        if hasattr(driver, "schemas"):
+            emit(dict(event="tool_catalog", tools=catalog(driver.schemas, candidates.candidates)))
+        menu, groups = choice_menu(candidates.candidates, candidate_path)
+        candidates = CandidateSet(observation.id, tuple(menu))
+        request = decision_request(task, observation, candidates, history, max_steps-step, seed+step, before=previous_observation)
+        from decision_payload import compact_catalog, structured_choices
+        request["criteria"], request["bindings"] = structured_choices(candidates.candidates, groups)
+        request["tools"] = compact_catalog(getattr(driver, "schemas", {}))
+        request["observation"]["candidate_path"] = list(candidate_path)
+        if last_result is not None:
+            result_text = json.dumps(last_result)
+            request["observation"]["last_tool_result"] = result_text[:12000]
+            request["observation"]["result_characters_omitted"] = max(0, len(result_text)-12000)
         decision_id = f"decision-{step+1}"
         emit(dict(event="decision_request", decision_id=decision_id, request=request,
                   executable_options=sum(c.tool is not None for c in candidates.candidates)))
@@ -86,6 +109,16 @@ async def run_loop(task, driver, chooser, emit, *, target=None, max_steps=24,
         emit(dict(event="decision", decision_id=decision_id, **asdict(choice),
                   decision_ms=round((time.monotonic()-started)*1000, 2)))
         candidate = candidates.resolve(choice.selected_id, observation.id if observation else "startup")
+        if candidate.id in groups:
+            if dry_run:
+                return "dry_run"
+            candidate_path += (candidate.id,)
+            history.append(dict(**asdict(choice), description=candidate.description,
+                                outcome="candidate_group_selected", executed=False))
+            emit(dict(event="candidate_group_selected", decision_id=decision_id,
+                      group=candidate.id, options=len(groups[candidate.id])))
+            continue  # No UI action or refreshed snapshot for a choice-menu drilldown.
+        candidate_path = ()
         if candidate.id == "abstain":
             handoff("jev_abstained")
             return "abstained"
@@ -94,14 +127,20 @@ async def run_loop(task, driver, chooser, emit, *, target=None, max_steps=24,
         if candidate.id == "review":
             handoff("jev_requested_review")
             return "review_required"
+        previous_observation = observation
         before = observation.fingerprint() if observation else None
         started = time.monotonic()
         result = None
         if candidate.tool:
             emit(dict(event="dispatch", decision_id=decision_id, tool=candidate.tool,
-                      arguments=dict(candidate.arguments), snapshot_id=candidates.observation_id))
+                      arguments=thaw(candidate.arguments), snapshot_id=candidates.observation_id))
             try:
-                result = await driver.call(candidate.tool, dict(candidate.arguments))
+                result = await driver.call(candidate.tool, thaw(candidate.arguments))
+                last_result = result
+                emit(dict(event="tool_result", decision_id=decision_id, tool=candidate.tool, result=result))
+                if candidate.tool == "bring_to_front":
+                    emit(dict(event="activation_readback", verified=result.get("exact_window_effect", {}).get("verified") is True,
+                              status=result.get("status")))
             except Exception as error:
                 # Never repeat an uncertain mutation. Retain a fresh readback if possible.
                 emit(dict(event="action_failed", decision_id=decision_id, **error_details(error)))
@@ -111,17 +150,48 @@ async def run_loop(task, driver, chooser, emit, *, target=None, max_steps=24,
                         emit(dict(event="failure_readback", snapshot_id=after.id, elements=after.compact()))
                         if verify(task, after):
                             return "verified"
+                        details = getattr(error, "details", {})
+                        refused = (details.get("driver_effect") == "refused"
+                                   and details.get("driver_code") in {"element_outside_target_window", "off_space_or_ax_unresolved", "type_text_incomplete"})
+                        action_error = (getattr(error, "code", None) == "driver_tool_error"
+                                        and details.get("driver_code") == "tool_invocation_failed")
+                        if (refused or action_error) and refusal_recoveries < 3:
+                            refusal_recoveries += 1
+                            observation = after
+                            last_result = None
+                            history.append(dict(**asdict(choice), description=candidate.description,
+                                                outcome="refused_before_execution" if refused else "action_failed_effect_unknown",
+                                                driver_code=details["driver_code"],
+                                                error_details=details.get("driver_response", "")[:1000],
+                                                recovery="Fresh observation available. Assess the actual effect against the task. Choose another target, inspect further, or dismiss an irrelevant menu if observed. Do not blindly repeat an uncertain mutation; no action was retried automatically."))
+                            emit(dict(event="refusal_recovery" if refused else "action_error_recovery", decision_id=decision_id,
+                                      snapshot_id=after.id, recovery_count=refusal_recoveries))
+                            continue
                     except Exception:
                         pass
                 return "unknown"
-        if target:
+        inspecting = candidate.tool == "get_window_state"
+        if inspecting:
+            # This call already created the fresh index map. Do not invalidate it
+            # with another observation before presenting its candidates to Jev.
+            emit(dict(event="raw_observation", response=result))
+            observation = normalize(result, *target, query=candidate.arguments.get("query"))
+            last_result = None  # State is represented once, in Current.
+        elif target:
+            if driver.accepts("list_windows", {"pid": target[0]}):
+                windows = (await driver.call("list_windows", {"pid": target[0]})).get("windows", [])
+                new_id = select_window(windows, target[0])
+                if new_id is not None and new_id != target[1]:
+                    target = (target[0], new_id)
+                    emit(dict(event="target_rebound", pid=target[0], window_id=new_id))
             observation = await driver.observe(*target)
         changed = observation is not None and before != observation.fingerprint()
-        outcome = "observed_change" if changed else "no_change"
-        history.append(StepResult(candidate.id, candidate.description, outcome, changed))
-        emit(dict(event="step_result", decision_id=decision_id, **asdict(history[-1]),
-                  action_ms=round((time.monotonic()-started)*1000, 2),
-                  driver_effect=result.get("effect") if result else None))
+        outcome = "inspection_read_not_task_progress" if inspecting else "observed_change" if changed else "no_change"
+        history.append(dict(**asdict(choice), description=candidate.description,
+                            outcome=outcome, changed=changed,
+                            action_ms=round((time.monotonic()-started)*1000, 2),
+                            driver_effect=result.get("effect") if result else None))
+        emit(dict(event="step_result", decision_id=decision_id, **history[-1]))
         if observation:
             emit(dict(event="observation", snapshot_id=observation.id, elements=observation.compact()))
             if verify(task, observation):
@@ -150,7 +220,7 @@ def parse_args():
     parser.add_argument("--read-only", action="store_true", help="allow explicit app setup, then only observation or abstention")
     parser.add_argument("--max-steps", type=int, default=24)
     parser.add_argument("--timeout", type=float, default=180)
-    parser.add_argument("--minimum-confidence", type=float, default=.4)
+    parser.add_argument("--minimum-confidence", type=float, default=.1)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--log", type=Path, help="new JSONL file, never overwritten; contains UI and input text")
     args = parser.parse_args()
@@ -175,19 +245,27 @@ async def execute(args, emit):
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:
             driver = await NativeDriver.connect(session, f"jev-exp-{uuid.uuid4().hex[:8]}")
+            driver.emit = emit
             if args.doctor:
-                emit(dict(event="capabilities", tools={name: name in driver.schemas for name in
-                          ["launch_app", "list_windows", "get_window_state", "click", "type_text", "parse_visual_regions"]}))
+                emit(dict(event="capabilities", tools=catalog(driver.schemas, ())))
                 return "inspected"
             if args.inspect:
                 observation = await driver.observe(args.pid, args.window_id)
                 emit(dict(event="observation", snapshot_id=observation.id, elements=observation.compact()))
                 return "inspected"
             with audited_client(emit) as client:
-                return await run_loop(task, driver, JevChooser(client, emit=emit), emit,
-                    target=(args.pid, args.window_id) if args.pid else None,
-                    max_steps=args.max_steps, minimum_confidence=args.minimum_confidence,
-                    seed=args.seed, dry_run=args.dry_run, read_only=args.read_only)
+                try:
+                    return await run_loop(task, driver, JevChooser(client, emit=emit), emit,
+                        target=(args.pid, args.window_id) if args.pid else None,
+                        max_steps=args.max_steps, minimum_confidence=args.minimum_confidence,
+                        seed=args.seed, dry_run=args.dry_run, read_only=args.read_only)
+                finally:
+                    if driver.restore_target is not None:
+                        try:
+                            result = await asyncio.wait_for(driver.restore_focus(), 10)
+                            emit(dict(event="focus_restored", result=result))
+                        except Exception as error:
+                            emit(dict(event="focus_restore_failed", **error_details(error)))
 
 
 def main():

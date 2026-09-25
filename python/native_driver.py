@@ -8,6 +8,7 @@ from jsonschema import Draft202012Validator
 
 from native_core import Element, Observation
 from native_errors import DiagnosticError
+from driver_candidates import thaw
 
 
 class DriverFailure(DiagnosticError):
@@ -17,6 +18,7 @@ class DriverFailure(DiagnosticError):
 def select_window(windows: list[dict], pid: int) -> int | None:
     """Bind an unambiguous named window, never choose between named documents."""
     if not isinstance(windows, list):
+        from native_errors import DiagnosticError
         raise DiagnosticError("malformed_windows", "windows must be a list")
     eligible = [w for w in windows if isinstance(w, dict)
                 and type(w.get("window_id")) is int and w["window_id"] > 0
@@ -25,10 +27,20 @@ def select_window(windows: list[dict], pid: int) -> int | None:
     if len(ids) != len(set(ids)):
         return None
     titled = [w for w in eligible if isinstance(w.get("title"), str) and w["title"].strip()]
-    if len(titled) == 1 and all(w is titled[0] or w.get("is_on_screen") is False for w in eligible):
+    if len(titled) == 1:
         return titled[0]["window_id"]
-    if len(eligible) == 1 and eligible[0].get("is_on_screen", True):
-        return eligible[0]["window_id"]
+    if len(titled) > 1:
+        return None
+    on_screen = [w for w in eligible if w.get("is_on_screen", True)]
+    if len(on_screen) == 1:
+        return on_screen[0]["window_id"]
+    return None
+    titled = [w for w in eligible if isinstance(w.get("title"), str) and w["title"].strip()]
+    if len(titled) == 1:
+        return titled[0]["window_id"]
+    on_screen = [w for w in eligible if w.get("is_on_screen", True)]
+    if len(on_screen) == 1:
+        return on_screen[0]["window_id"]
     return None
 
 
@@ -45,16 +57,22 @@ def window_content(elements: list[Element]) -> tuple[list[Element], int]:
             if current.index in chain:
                 raise DiagnosticError("cyclic_element_tree", "cyclic element parent references")
             chain.add(current.index)
-            if current.role in MENU_ROLES:
+            if current.role == "AXMenuBar":
                 excluded.add(element.index)
                 break
             current = by_id.get(current.parent)
     return [e for e in elements if e.index not in excluded], len(excluded)
 
 
-def normalize(raw: dict[str, Any], pid: int, window_id: int) -> Observation:
+def normalize(raw: dict[str, Any], pid: int, window_id: int, *, query: str | None = None) -> Observation:
     snapshot = raw.get("snapshot_id")
     rows = raw.get("elements")
+    if (not snapshot and rows == [] and raw.get("degraded") is True
+            and raw.get("pid") == pid and raw.get("window_id") == window_id
+            and (raw.get("background_input") or {}).get("exact_window", {}).get("status") == "ax_unresolved"):
+        # Local observation identity only; never an element-addressing token.
+        import uuid
+        snapshot = "unindexed-" + uuid.uuid4().hex
     if not isinstance(snapshot, str) or not snapshot or not isinstance(rows, list):
         raise DiagnosticError("missing_snapshot", "Driver must supply snapshot_id and structured elements",
                               has_snapshot=isinstance(snapshot, str), has_elements=isinstance(rows, list))
@@ -99,10 +117,10 @@ def normalize(raw: dict[str, Any], pid: int, window_id: int) -> Observation:
                                 row.get("enabled", True), parent,
                                 row.get("in_web_content", False)))
     scoped, excluded = window_content(elements)
-    if len(scoped) > 200:
-        raise DiagnosticError("window_content_limit", "window content exceeds 200 elements",
+    if len(scoped) > 2000:
+        raise DiagnosticError("window_content_limit", "window content exceeds 2000 elements",
                               element_count=len(scoped), excluded_menu_elements=excluded)
-    complete = raw.get("elements_complete", True)
+    complete = False if snapshot.startswith("unindexed-") else raw.get("elements_complete", True)
     if type(complete) is not bool:
         raise DiagnosticError("invalid_completeness", "elements_complete must be boolean")
     text = raw.get("tree_markdown", "")
@@ -110,14 +128,48 @@ def normalize(raw: dict[str, Any], pid: int, window_id: int) -> Observation:
         raise ValueError("invalid tree text")
     # Separate non-actionable evidence; never invent element refs from markdown.
     text = re.split(r"(?m)^- (?:\[\d+\] )?AXMenuBar\b", text, maxsplit=1)[0]
-    if len(text) > 64000:
-        raise ValueError("readback text exceeds v0 limit")
-    return Observation(snapshot, pid, window_id, tuple(scoped), excluded, complete, text)
+    by_id = {e.index: e for e in elements}
+    paths = []
+    for element in elements:
+        if element.role != "AXMenuItem" or not element.enabled or not element.label:
+            continue
+        path, current, in_application_menu = [], element, False
+        while current is not None:
+            in_application_menu |= current.role == "AXMenuBar"
+            if current.role in {"AXMenuBarItem", "AXMenuItem"} and current.label:
+                path.append(current.label)
+            current = by_id.get(current.parent)
+        if in_application_menu and len(path) > 1:
+            paths.append(tuple(reversed(path)))
+    capability = raw.get("background_input")
+    if capability is not None and not isinstance(capability, dict):
+        raise DiagnosticError("invalid_capability_report", "background_input must be an object")
+    metadata = {}
+    for key in ("app_name", "window_title"):
+        value = raw.get(key)
+        if value is not None and (not isinstance(value, str) or len(value) > 4000):
+            raise DiagnosticError("invalid_app_metadata", "invalid application metadata", field=key)
+        metadata[key] = value
+    inspection = None
+    if query is not None:
+        complete = False
+        inspection = dict(query=query, matching="case-insensitive substring plus ancestors",
+                          total_element_count=raw.get("total_element_count", raw.get("element_count")),
+                          returned_element_count=len(rows),
+                          absence="unknown outside this partial view; reobserve restores the full view")
+    return Observation(snapshot, pid, window_id, tuple(scoped), excluded, complete, text, tuple(paths), capability,
+                       inspection=inspection, availability={
+                           "degraded": raw.get("degraded", False),
+                           "reason": raw.get("degraded_reason"),
+                           **raw.get("window_visibility", {}),
+                       }, **metadata)
 
 
 class NativeDriver:
     def __init__(self, session: Any, label: str, schemas: dict[str, dict]) -> None:
         self.session, self.label, self.schemas = session, label, schemas
+        self.restore_target = None
+        self.activation_attempted = False
 
     @classmethod
     async def connect(cls, session: Any, label: str) -> NativeDriver:
@@ -136,7 +188,7 @@ class NativeDriver:
         schema = self.schemas.get(tool)
         if schema is None:
             return False
-        args = dict(arguments)
+        args = thaw(arguments)
         if not set(args).issubset(schema.get("properties", {})):
             return False
         if "session" in schema.get("properties", {}):
@@ -146,7 +198,17 @@ class NativeDriver:
     async def call(self, tool: str, arguments: dict) -> dict:
         if not self.accepts(tool, arguments):
             raise DriverFailure("unsupported_tool_arguments", f"unsupported tool or arguments: {tool}", tool=tool)
-        args = dict(arguments)
+        args = thaw(arguments)
+        if tool == "bring_to_front" and not self.activation_attempted:
+            apps = (await self.call("list_apps", {})).get("apps", [])
+            active = next((a for a in apps if a.get("active")), None)
+            if active:
+                windows = (await self.call("list_windows", {"pid": active["pid"]})).get("windows", [])
+                visible = [w for w in windows if w.get("is_on_screen") and w.get("title")]
+                if visible:
+                    prior = max(visible, key=lambda w: w.get("z_index") or 0)
+                    self.restore_target = dict(pid=active["pid"], window_id=prior["window_id"])
+            self.activation_attempted = True
         if "session" in self.schemas[tool].get("properties", {}):
             args["session"] = self.label
         try:
@@ -155,17 +217,42 @@ class NativeDriver:
             raise DriverFailure("driver_transport_error", "Driver request failed",
                                 tool=tool, cause_type=type(error).__name__) from error
         data = result.structuredContent
+        def diagnostics():
+            import json
+            import os
+            text = json.dumps({"structured": data, "messages": [getattr(block, "text", "")
+                              for block in getattr(result, "content", [])]}, default=str)
+            for name in ("TYPESAFE_API_KEY", "CUA_DRIVER_TOKEN"):
+                secret = os.getenv(name)
+                if secret:
+                    text = text.replace(secret, "[REDACTED]")
+            return dict(driver_response=text[:4000], omitted_characters=max(0, len(text)-4000),
+                        driver_code=data.get("code") if isinstance(data, dict) else None,
+                        driver_effect=data.get("effect") if isinstance(data, dict) else None)
         if result.isError or not isinstance(data, dict):
             raise DriverFailure("driver_tool_error" if result.isError else "missing_structured_result",
-                                f"{tool}: error or missing structured result", tool=tool)
+                                f"{tool}: error or missing structured result", tool=tool, **diagnostics())
         if data.get("refusal") or data.get("status") in {"refused", "error", "failed"}:
-            raise DriverFailure("driver_refused", f"{tool}: refused or failed", tool=tool)
+            raise DriverFailure("driver_refused", f"{tool}: refused or failed", tool=tool, **diagnostics())
         return data
+
+    async def restore_focus(self):
+        if self.restore_target is not None:
+            target, self.restore_target = self.restore_target, None
+            return await self.call("bring_to_front", target)
 
     async def observe(self, pid: int, window_id: int) -> Observation:
         raw = await self.call("get_window_state", {
             "pid": pid, "window_id": window_id, "include_screenshot": False,
         })
+        if self.accepts("list_windows", {"pid": pid}):
+            windows = (await self.call("list_windows", {"pid": pid})).get("windows", [])
+            window = next((w for w in windows if w.get("window_id") == window_id), {})
+            raw["window_visibility"] = {k: window.get(k) for k in
+                                        ("is_on_screen", "on_current_space", "space_ids")}
+        # Persist before normalization so rejected/partial responses remain auditable.
+        if hasattr(self, "emit"):
+            self.emit(dict(event="raw_observation", response=raw))
         try:
             return normalize(raw, pid, window_id)
         except DiagnosticError:
