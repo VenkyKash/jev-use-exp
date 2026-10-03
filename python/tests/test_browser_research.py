@@ -27,10 +27,11 @@ def snapshot(generation="p1"):
 
 
 class BrowserResearchTest(unittest.TestCase):
-    def test_generic_candidates_exclude_editing_and_login(self):
+    def test_generic_candidates_include_observed_editing_and_links(self):
         built = build_browser_candidates(snapshot(), task())
         self.assertEqual({c.id for c in built},
-            {"type-p1:0", "click-p1:1", "click-p1:2", "read-0", "finish", "reobserve", "abstain"})
+            {"type-p1:0", "type-p1:0-0-insert", "type-p1:4", "type-p1:4-0-insert",
+             "click-p1:1", "click-p1:2", "click-p1:3", "click-p1:5", "read-0", "finish", "reobserve", "abstain"})
         self.assertEqual(next(c for c in built if c.id == "type-p1:0").arguments["text"], "Topic")
 
     def test_stale_duplicate_and_disabled_refs(self):
@@ -48,12 +49,12 @@ class BrowserResearchTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 task().check_url(url)
 
-    def test_scoped_evidence_and_exact_link_match(self):
+    def test_scoped_evidence_and_links_do_not_require_goal_keyword_match(self):
         raw = snapshot()
         raw["refs"][2]["name"] = "Book about Topic"
         raw["content_refs"] = [dict(ref="p1:10", role="region", name="History and aftermath")]
         built = build_browser_candidates(raw, task())
-        self.assertNotIn("click-p1:2", {c.id for c in built})
+        self.assertIn("click-p1:2", {c.id for c in built})
         self.assertEqual(next(c for c in built if c.id == "scope-p1:10").arguments["scope_ref"], "p1:10")
 
     def test_selected_action_is_immutable_and_generation_bound(self):
@@ -73,6 +74,14 @@ class BrowserResearchTest(unittest.TestCase):
         choose_with_typesafe(client, build_browser_candidates(snapshot(), task()), snapshot(), None, [], goal=task().goal)
         self.assertEqual(client.request["state"]["goal"], "Research a topic")
         self.assertIn("driver_action", client.request["questions"])
+        self.assertIsNone(client.request["state"]["observation"]["before"])
+        previous = dict(page={"url": "https://example.org/previous"}, outline="Earlier", visual=None)
+        history = [dict(candidate="click-p1:2", confidence=.9, probabilities={"click-p1:2": 1})]
+        choose_with_typesafe(client, build_browser_candidates(snapshot(), task()), snapshot(), None,
+                             history, goal=task().goal, before=previous)
+        self.assertEqual(client.request["state"]["observation"]["before"], previous)
+        self.assertEqual(client.request["state"]["observation"]["current"]["outline"], "Evidence text")
+        self.assertEqual(client.request["state"]["history"], history)
 
 
 class BrowserResearchLoopTest(unittest.IsolatedAsyncioTestCase):

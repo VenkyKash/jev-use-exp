@@ -10,24 +10,24 @@ from test_native import task
 class ConfidenceCutoffTest(unittest.TestCase):
     def test_cli_default_and_override(self):
         with patch('sys.argv', ['native_run.py', '--task', 'task.json']):
-            self.assertEqual(parse_args().minimum_confidence, .4)
+            self.assertEqual(parse_args().minimum_confidence, .1)
         with patch('sys.argv', ['native_run.py', '--task', 'task.json', '--minimum-confidence', '.5']):
             self.assertEqual(parse_args().minimum_confidence, .5)
 
     def test_boundary(self):
-        for confidence in (.4, .49):
+        for confidence in (.1, .22):
             validate_decision(Decision('abstain', confidence, {'abstain': 1}, None),
-                              {'criteria': {'abstain': 'Stop'}}, .4)
+                              {'criteria': {'abstain': 'Stop'}}, .1)
         with self.assertRaises(ValueError):
-            validate_decision(Decision('abstain', .39, {'abstain': 1}, None),
-                              {'criteria': {'abstain': 'Stop'}}, .4)
+            validate_decision(Decision('abstain', .09, {'abstain': 1}, None),
+                              {'criteria': {'abstain': 'Stop'}}, .1)
 
 
 class LoopDefaultTest(unittest.IsolatedAsyncioTestCase):
-    async def test_loop_default_accepts_point_four(self):
+    async def test_loop_default_accepts_point_one(self):
         class Chooser:
             async def choose(self, request):
-                return Decision('abstain', .4,
+                return Decision('abstain', .1,
                                 {key: float(key == 'abstain') for key in request['criteria']}, None)
         self.assertEqual(await run_loop(task(), FixtureDriver(), Chooser(), lambda e: None,
                                        target=(1, 2)), 'abstained')

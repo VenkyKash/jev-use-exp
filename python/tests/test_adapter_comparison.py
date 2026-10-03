@@ -30,7 +30,7 @@ def compare(selected, confidence, probabilities, ids):
     candidates = [Candidate(key, key, None, {}) for key in ids]
     clients = [ReplayClient(answer), ReplayClient(answer)]
     request = dict(goal="Enter the verification token, then submit the form.",
-                   observation=dict(page=None, outline=None, visual=None),
+                   observation=dict(before=None, current=dict(page=None, outline=None, visual=None)),
                    criteria={key: key for key in ids})
     outcomes = []
     for native, client in zip((False, True), clients):

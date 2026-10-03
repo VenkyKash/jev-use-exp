@@ -67,7 +67,7 @@ class LiveAdapterTest(unittest.TestCase):
             set(question.criteria),
             {"submit-form", "reobserve", "abstain"},
         )
-        sent_visual = FakeClient.request["state"]["observation"]["visual"]
+        sent_visual = FakeClient.request["state"]["observation"]["current"]["visual"]
         self.assertEqual(sent_visual["capture_id"], "capture-submit")
         self.assertEqual(sent_visual["regions"][0]["id"], "submit-text")
 

@@ -68,8 +68,7 @@ def normalize(raw: dict[str, Any], pid: int, window_id: int, *, query: str | Non
     snapshot = raw.get("snapshot_id")
     rows = raw.get("elements")
     if (not snapshot and rows == [] and raw.get("degraded") is True
-            and raw.get("pid") == pid and raw.get("window_id") == window_id
-            and (raw.get("background_input") or {}).get("exact_window", {}).get("status") == "ax_unresolved"):
+            and raw.get("pid") == pid and raw.get("window_id") == window_id):
         # Local observation identity only; never an element-addressing token.
         import uuid
         snapshot = "unindexed-" + uuid.uuid4().hex
@@ -113,9 +112,10 @@ def normalize(raw: dict[str, Any], pid: int, window_id: int, *, query: str | Non
         indices.add(index)
         if token:
             tokens.add(token)
+        from native_geometry import element_frame
         elements.append(Element(index, role, label, value, token, tuple(actions),
                                 row.get("enabled", True), parent,
-                                row.get("in_web_content", False)))
+                                row.get("in_web_content", False), element_frame(row.get("frame"))))
     scoped, excluded = window_content(elements)
     if len(scoped) > 2000:
         raise DiagnosticError("window_content_limit", "window content exceeds 2000 elements",
@@ -157,7 +157,9 @@ def normalize(raw: dict[str, Any], pid: int, window_id: int, *, query: str | Non
                           total_element_count=raw.get("total_element_count", raw.get("element_count")),
                           returned_element_count=len(rows),
                           absence="unknown outside this partial view; reobserve restores the full view")
+    from native_geometry import capture_geometry
     return Observation(snapshot, pid, window_id, tuple(scoped), excluded, complete, text, tuple(paths), capability,
+                       geometry=capture_geometry(raw),
                        inspection=inspection, availability={
                            "degraded": raw.get("degraded", False),
                            "reason": raw.get("degraded_reason"),
@@ -243,7 +245,7 @@ class NativeDriver:
 
     async def observe(self, pid: int, window_id: int) -> Observation:
         raw = await self.call("get_window_state", {
-            "pid": pid, "window_id": window_id, "include_screenshot": False,
+            "pid": pid, "window_id": window_id, "include_screenshot": True,
         })
         if self.accepts("list_windows", {"pid": pid}):
             windows = (await self.call("list_windows", {"pid": pid})).get("windows", [])

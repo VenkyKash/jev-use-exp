@@ -19,25 +19,56 @@ class ProviderChoice:
     model: str | None
 
 
+def checked_system_one(client, *, state, questions):
+    from decision_payload import validate_request_budget
+    validate_request_budget(state, questions)
+    return client.system_one(state=state, questions=questions)
+
+
 def choose_bounded_with_typesafe(
     client: TypeSafeClientLike,
     *,
     goal: str,
     observation: Mapping[str, Any],
-    criteria: Mapping[str, str],
+    criteria: Mapping[str, Any],
+    history: list[dict[str, Any]] | None = None,
+    tools: Mapping[str, Any] | None = None,
+    bindings: Mapping[str, Any] | None = None,
+    task: Mapping[str, Any] | None = None,
+    application: Mapping[str, Any] | None = None,
 ) -> ProviderChoice:
     from typesafe_sdk import Choice
 
-    response = client.system_one(
-        state={"goal": goal, "observation": dict(observation)},
+    question = "candidate" if history is None else "driver_action"
+    state = {"goal": goal, "observation": dict(observation)}
+    if application is not None:
+        state["application"] = dict(application)
+    if task is not None:
+        state["task"] = dict(task)
+        state["interface"] = {"kind": "computer_use", "execution": "Select one discrete action, execute, then observe. Group selection only expands choices."}
+    if history is not None:
+        state["history"] = history
+    if tools is not None:
+        state["tools"] = dict(tools)
+    if bindings is not None:
+        state["bindings"] = dict(bindings)
+    from decision_payload import INSTRUCTIONS, compact_request
+    state, criteria = compact_request(state, criteria)
+    instructions = INSTRUCTIONS
+    if "before" not in observation:
+        instructions = {**INSTRUCTIONS, "consider": ["observation.current", "history"],
+                        "rules": [rule.split(" A before encoded as current_patch_v1")[0]
+                                  for rule in INSTRUCTIONS["rules"]]}
+    response = checked_system_one(client,
+        state=state,
         questions={
-            "candidate": Choice(
-                instructions="Select exactly one supplied candidate ID.",
+            question: Choice(
+                instructions=instructions,
                 criteria=dict(criteria),
             )
         },
     )
-    answer = response.choices["candidate"]
+    answer = response.choices[question]
     if answer.choice not in criteria:
         raise ValueError(f"Jev selected unknown candidate: {answer.choice}")
     confidence = float(answer.confidence)
@@ -103,24 +134,38 @@ def choose_with_typesafe(
     history: list[dict[str, Any]],
     *,
     goal: str = "Enter the verification token, then submit the form.",
+    before: dict[str, Any] | None = None,
+    schemas: dict[str, Any] | None = None,
+    groups: dict | None = None,
 ) -> tuple[str, float, dict[str, float]]:
     from typesafe_sdk import Choice
 
     criteria = _candidate_criteria(candidates)
+    from decision_payload import compact_catalog, structured_choices, INSTRUCTIONS
+    bindings = {}
+    if schemas is not None:
+        criteria, bindings = structured_choices(candidates, groups)
     state = {
         "goal": goal,
         "observation": {
+            "before": before,
+            "current": {
             "page": snapshot.get("page"),
             "outline": snapshot.get("outline"),
             "visual": visual_decision_state(visual),
+            },
         },
         "history": history,
     }
-    response = client.system_one(
+    if schemas is not None:
+        state.update(tools=compact_catalog(schemas), bindings=bindings)
+    from decision_payload import compact_request
+    state, criteria = compact_request(state, criteria)
+    response = checked_system_one(client,
         state=state,
         questions={
             "driver_action": Choice(
-                instructions="Which complete executable action should Cua Driver run next?",
+                instructions=INSTRUCTIONS,
                 criteria=criteria,
             )
         },
@@ -136,11 +181,12 @@ def choose_live(
     snapshot: dict[str, Any],
     visual: VisualObservation | None,
     history: list[dict[str, Any]],
+    before: dict[str, Any] | None = None,
 ) -> tuple[str, float, dict[str, float]]:
     from typesafe_sdk import TypeSafeClient
 
     with TypeSafeClient() as client:
-        return choose_with_typesafe(client, candidates, snapshot, visual, history)
+        return choose_with_typesafe(client, candidates, snapshot, visual, history, before=before)
 
 
 def choose_mock_adapter(

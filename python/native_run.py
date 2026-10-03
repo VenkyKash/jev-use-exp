@@ -27,7 +27,7 @@ from evidence import evidence_handoff
 
 async def run_loop(task, driver, chooser, emit, *, target=None, max_steps=24,
                    no_progress_limit=3, minimum_confidence=.1, seed=0, dry_run=False,
-                   read_only=False):
+                   read_only=False, hierarchy=False):
     history = []
     stalled = 0
     refusal_recoveries = 0
@@ -71,13 +71,28 @@ async def run_loop(task, driver, chooser, emit, *, target=None, max_steps=24,
     candidate_path = ()
     last_result = None
     previous_observation = None
+    tree = None
+    previous_view = None
     for step in range(max_steps):
         if observation and verify(task, observation):
             return "verified"
         coverage = []
-        candidates = build_native_candidates(task, observation,
+        view = observation
+        if hierarchy:
+            from native_hierarchy import HierarchyView
+            if tree is None or tree.observation.id != observation.id:
+                tree = HierarchyView(observation)
+            view = tree.project()
+        candidates = build_native_candidates(task, view,
                                             (lambda *_: False) if read_only else driver.accepts,
                                             diagnostics=coverage, read_only=read_only, last_result=last_result)
+        if hierarchy:
+            # Hierarchy expansion replaces substring inspection in this mode.
+            from core import Candidate
+            candidates = CandidateSet(observation.id, tuple(
+                c for c in candidates.candidates if not c.id.startswith("inspect-")) + tuple(tree.choices()) + (
+                    (Candidate("review", "Hand full local readback to the caller for verification only when the task is complete.", None, {}),)
+                    if observation.readback_text else ()))
         emit(dict(event="candidate_coverage", schema="jev.candidate_coverage.v1",
                   snapshot_id=observation.id, decision_id=f"decision-{step+1}",
                   read_only=read_only, observation_complete=observation.complete,
@@ -86,7 +101,8 @@ async def run_loop(task, driver, chooser, emit, *, target=None, max_steps=24,
             emit(dict(event="tool_catalog", tools=catalog(driver.schemas, candidates.candidates)))
         menu, groups = choice_menu(candidates.candidates, candidate_path)
         candidates = CandidateSet(observation.id, tuple(menu))
-        request = decision_request(task, observation, candidates, history, max_steps-step, seed+step, before=previous_observation)
+        request = decision_request(task, view, candidates, history, max_steps-step, seed+step,
+                                   before=previous_view if hierarchy else previous_observation)
         from decision_payload import compact_catalog, structured_choices
         request["criteria"], request["bindings"] = structured_choices(candidates.candidates, groups)
         request["tools"] = compact_catalog(getattr(driver, "schemas", {}))
@@ -109,6 +125,16 @@ async def run_loop(task, driver, chooser, emit, *, target=None, max_steps=24,
         emit(dict(event="decision", decision_id=decision_id, **asdict(choice),
                   decision_ms=round((time.monotonic()-started)*1000, 2)))
         candidate = candidates.resolve(choice.selected_id, observation.id if observation else "startup")
+        if hierarchy and candidate.id.startswith("tree-"):
+            if dry_run:
+                return "dry_run"
+            tree.navigate(candidate.id, observation.id)
+            candidate_path = ()
+            history.append(dict(**asdict(choice), description=candidate.description,
+                                outcome="hierarchy_inspected", executed=False))
+            emit(dict(event="hierarchy_inspected", decision_id=decision_id,
+                      selected_id=candidate.id, snapshot_id=observation.id))
+            continue
         if candidate.id in groups:
             if dry_run:
                 return "dry_run"
@@ -128,13 +154,18 @@ async def run_loop(task, driver, chooser, emit, *, target=None, max_steps=24,
             handoff("jev_requested_review")
             return "review_required"
         previous_observation = observation
+        previous_view = view
+        tree = None  # UI actions and reobserve invalidate local branch addressing.
         before = observation.fingerprint() if observation else None
         started = time.monotonic()
         result = None
         if candidate.tool:
-            emit(dict(event="dispatch", decision_id=decision_id, tool=candidate.tool,
-                      arguments=thaw(candidate.arguments), snapshot_id=candidates.observation_id))
             try:
+                if candidate.tool == "click" and "x" in candidate.arguments:
+                    from native_geometry import validate_pixel_target
+                    await validate_pixel_target(driver, observation)
+                emit(dict(event="dispatch", decision_id=decision_id, tool=candidate.tool,
+                          arguments=thaw(candidate.arguments), snapshot_id=candidates.observation_id))
                 result = await driver.call(candidate.tool, thaw(candidate.arguments))
                 last_result = result
                 emit(dict(event="tool_result", decision_id=decision_id, tool=candidate.tool, result=result))
@@ -191,6 +222,16 @@ async def run_loop(task, driver, chooser, emit, *, target=None, max_steps=24,
                             outcome=outcome, changed=changed,
                             action_ms=round((time.monotonic()-started)*1000, 2),
                             driver_effect=result.get("effect") if result else None))
+        if candidate.tool == "click":
+            history[-1]["targeting"] = dict(
+                method="coordinates" if "x" in candidate.arguments else "element",
+                target=getattr(candidate, "target_index", None),
+                area=getattr(candidate, "area_index", None),
+                source_snapshot=candidates.observation_id,
+                delivery=candidate.arguments.get("delivery_mode"),
+                route=result.get("route") if result else None,
+                point=[candidate.arguments.get("x"), candidate.arguments.get("y")]
+                      if "x" in candidate.arguments else None)
         emit(dict(event="step_result", decision_id=decision_id, **history[-1]))
         if observation:
             emit(dict(event="observation", snapshot_id=observation.id, elements=observation.compact()))
@@ -222,6 +263,7 @@ def parse_args():
     parser.add_argument("--timeout", type=float, default=180)
     parser.add_argument("--minimum-confidence", type=float, default=.1)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--hierarchy", action="store_true", help="Jev-directed local hierarchy inspection; default flat mode unchanged")
     parser.add_argument("--log", type=Path, help="new JSONL file, never overwritten; contains UI and input text")
     args = parser.parse_args()
     if bool(args.pid) != bool(args.window_id) or (args.pid is not None and min(args.pid, args.window_id) <= 0):
@@ -258,7 +300,8 @@ async def execute(args, emit):
                     return await run_loop(task, driver, JevChooser(client, emit=emit), emit,
                         target=(args.pid, args.window_id) if args.pid else None,
                         max_steps=args.max_steps, minimum_confidence=args.minimum_confidence,
-                        seed=args.seed, dry_run=args.dry_run, read_only=args.read_only)
+                        seed=args.seed, dry_run=args.dry_run, read_only=args.read_only,
+                        hierarchy=args.hierarchy)
                 finally:
                     if driver.restore_target is not None:
                         try:

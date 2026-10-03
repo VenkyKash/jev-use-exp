@@ -5,6 +5,7 @@ INSTRUCTIONS = {
     "consider": ["observation.before", "observation.current", "history"],
     "rules": [
         "A group expands choices without executing an action.",
+        "When hierarchy inspection is active, the visible controls are only one branch/page, not the whole app. If they do not fit the goal, inspect more options: use supplied tree-next/tree-previous for sibling pages, tree-expand-* to go deeper, and tree-parent/tree-root to leave a branch and explore another. These are read-only inspection choices, not app navigation. Do not infer that an unseen control is absent or repeatedly click an unrelated visible control instead of exploring.",
         "Select an executable candidate or a supplied control; the tool catalog is capability information, not authorization.",
         "A changed observation or successful tool call does not establish task completion.",
         "Respect task.required_sequence and input purposes. Entered text does not prove navigation. Handoff requires observed evidence for task.success and task.relevance.",
@@ -272,6 +273,7 @@ def structured_choices(candidates, groups=None):
         inherited = [key for key, value in common.items() if key in args and args[key] == value]
         return {"tool": candidate.tool,
                 "description": candidate.description,
+                **({"aliases": list(candidate.aliases)} if candidate.aliases else {}),
                 "args": {key: value for key, value in args.items() if key not in inherited},
                 **({"inherit": inherited} if inherited else {})}
 

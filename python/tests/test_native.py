@@ -59,8 +59,8 @@ class NativeCandidatesTest(unittest.TestCase):
         raw["elements"].append(dict(element_index=3, role="AXButton", label="Cancel"))
         obs = normalize(raw, 1, 2)
         built = build_native_candidates(task(), obs, lambda *_: True)
-        self.assertEqual({c.id for c in built.candidates},
-                         {"type-0-0", "click-1", "click-3", "reobserve", "abstain"})
+        self.assertTrue({"type-0-0", "click-1", "click-3", "reobserve", "abstain"}
+                        <= {c.id for c in built.candidates})
         other = Task("Different goal", "Different app", task().inputs, ())
         self.assertEqual(built, build_native_candidates(other, obs, lambda *_: True))
 
@@ -73,11 +73,13 @@ class NativeCandidatesTest(unittest.TestCase):
         with self.assertRaises(TypeError):
             built.resolve("click-1", "s1").arguments["pid"] = 999
 
-    def test_disabled_web_and_unsupported_actions_not_offered(self):
+    def test_web_actions_offered_but_disabled_and_unsupported_are_not(self):
         raw = snapshot()
         raw["elements"][0]["in_web_content"] = True
         raw["elements"][1]["enabled"] = False
-        self.assertEqual(len(build_native_candidates(task(), normalize(raw, 1, 2), lambda *_: True).candidates), 2)
+        ids = {c.id for c in build_native_candidates(task(), normalize(raw, 1, 2), lambda *_: True).candidates}
+        self.assertIn("type-0-0", ids)
+        self.assertNotIn("click-1", ids)
         self.assertEqual(len(build_native_candidates(task(), normalize(snapshot(), 1, 2), lambda *_: False).candidates), 2)
 
 
@@ -128,7 +130,9 @@ class NativeLoopTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(driver.submitted, ("Ada", "Paris"))
         self.assertEqual(len(driver.calls), len(chooser.requests) + 1)
         self.assertTrue(all("launch" not in r["criteria"] for r in chooser.requests))
-        self.assertTrue(all(r["observation"]["elements"] for r in chooser.requests))
+        self.assertTrue(all(r["observation"]["current"]["elements"] for r in chooser.requests))
+        self.assertTrue(all("before" not in r["observation"] for r in chooser.requests))
+        self.assertIn("probabilities", chooser.requests[1]["history"][0])
         self.assertTrue(all(len(r["criteria"]) >= 3 for r in chooser.requests))
         self.assertEqual(len([e for e in events if e["event"] == "dispatch"]), 3)
         self.assertEqual(len([e for e in events if e["event"] == "setup_dispatch"]), 1)
@@ -210,12 +214,14 @@ class NativeTransportTest(unittest.IsolatedAsyncioTestCase):
         class Client:
             def system_one(self, **kwargs):
                 requests.append(kwargs)
-                return SimpleNamespace(model="test-jev", choices={"candidate": SimpleNamespace(
+                return SimpleNamespace(model="test-jev", choices={"driver_action": SimpleNamespace(
                     choice="click-1", confidence=.9,
-                    probabilities={"type-0-0": .05, "click-1": .9, "abstain": .025, "reobserve": .025})})
+                    probabilities={key: float(key == "click-1") for key in kwargs["questions"]["driver_action"].criteria})})
         obs = normalize(snapshot(), 1, 2)
         request = decision_request(task(), obs, build_native_candidates(task(), obs, lambda *_: True), [], 20, 1)
         decision = await JevChooser(Client()).choose(request)
         validate_decision(decision, request, .5)
-        self.assertEqual(requests[0]["state"], {"goal": task().goal, "observation": request["observation"]})
-        self.assertEqual(requests[0]["questions"]["candidate"].criteria, request["criteria"])
+        from decision_payload import compact_request
+        expected, _ = compact_request({"goal": task().goal, "observation": request["observation"], "history": [], "application": request["application"]}, request["criteria"])
+        self.assertEqual(requests[0]["state"], expected)
+        self.assertEqual(requests[0]["questions"]["driver_action"].criteria, request["criteria"])

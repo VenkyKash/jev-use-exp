@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, Literal, Mapping
 from urllib.parse import urlsplit
@@ -25,6 +25,7 @@ class Candidate:
     arguments: Mapping[str, Any]
     capture_id: str | None = None
     screenshot_reference: str | None = None
+    aliases: tuple[str, ...] = field(default=(), kw_only=True)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "arguments", _freeze(dict(self.arguments)))
@@ -346,26 +347,39 @@ def classify(submitted: str | None, token: str, *, steps: int, max_steps: int) -
 
 @dataclass(frozen=True)
 class BrowserTask:
-    """Declarative public-web research inputs, not selectors or an action script."""
+    """Declarative browser goal and inputs; legacy research fields are optional."""
     goal: str
     start_url: str
     allowed_hosts: tuple[str, ...]
     search_text: str
     navigation_terms: tuple[str, ...]
     observation_queries: tuple[str, ...]
+    inputs: tuple[str, ...] = ()
+    tool_options: tuple = ()
 
     @classmethod
     def parse(cls, raw):
-        if not isinstance(raw, dict) or set(raw) != set(cls.__annotations__):
+        if (not isinstance(raw, dict) or not {"goal", "start_url", "allowed_hosts"} <= set(raw)
+                or set(raw) - set(cls.__annotations__)):
             raise ValueError("invalid browser task fields")
-        for key in ("goal", "start_url", "search_text"):
+        raw = {"search_text": "", "navigation_terms": [], "observation_queries": [],
+               "inputs": [], "tool_options": [], **raw}
+        for key in ("goal", "start_url"):
             if not isinstance(raw[key], str) or not raw[key].strip() or len(raw[key]) > 4000:
                 raise ValueError("invalid browser task text")
         for key in ("allowed_hosts", "navigation_terms", "observation_queries"):
-            if not isinstance(raw[key], list) or not 1 <= len(raw[key]) <= 12 or any(
+            if not isinstance(raw[key], list) or not (1 if key == "allowed_hosts" else 0) <= len(raw[key]) <= 12 or any(
                 not isinstance(s, str) or not s.strip() or len(s) > 200 for s in raw[key]
             ):
                 raise ValueError("invalid browser task terms")
+        if not isinstance(raw["search_text"], str) or len(raw["search_text"]) > 4000:
+            raise ValueError("invalid search text")
+        if not isinstance(raw["inputs"], list) or any(not isinstance(v, str) or len(v) > 4000 for v in raw["inputs"]):
+            raise ValueError("invalid browser inputs")
+        from driver_candidates import ToolOption
+        if not isinstance(raw["tool_options"], list):
+            raise ValueError("invalid tool options")
+        raw["tool_options"] = [ToolOption.parse(v) for v in raw["tool_options"]]
         task = cls(**{k: tuple(v) if isinstance(v, list) else v for k, v in raw.items()})
         task.check_url(task.start_url)
         return task
@@ -377,8 +391,9 @@ class BrowserTask:
             raise ValueError("page outside approved HTTPS hosts")
 
 
-def build_browser_candidates(snapshot: dict, task: BrowserTask) -> list[Candidate]:
-    """Search and task-relevant links only; no generic form/edit buttons."""
+def build_browser_candidates(snapshot: dict, task: BrowserTask, accepts=None, last_result=None) -> list[Candidate]:
+    """Offer observed actions across web apps, not a research-name allowlist."""
+    from driver_candidates import explicit_candidates
     task.check_url(snapshot["page"]["url"])
     common = {"target_id": snapshot["target_id"], "tab_id": snapshot["tab_id"]}
     generation = snapshot.get("snapshot", {}).get("id")
@@ -398,21 +413,29 @@ def build_browser_candidates(snapshot: dict, task: BrowserTask) -> list[Candidat
         actions = row.get("actions", [])
         if row.get("states", {}).get("disabled") or row.get("visibility") == "hidden":
             continue
-        is_search = role == "searchbox" or (role == "textbox" and "search" in name.casefold())
-        if is_search and "type" in actions and row.get("value") != task.search_text:
-            candidates.append(Candidate("type-" + ref, f"Search field {name!r}: enter {task.search_text!r}.",
-                "browser_type", {**common, "ref": ref, "text": task.search_text, "replace": True}))
-        # The input/submit distinction keeps edits, login, and unrelated buttons out.
-        search_button = role == "button" and name.strip().casefold() in {"search", "search wikipedia", "go"}
-        relevant_link = role == "link" and name.strip().casefold() in {term.casefold() for term in task.navigation_terms}
-        if "click" in actions and (search_button or relevant_link):
-            candidates.append(Candidate("click-" + ref, f"Follow {role} {name!r}.", "browser_click",
+        texts = task.inputs or ((task.search_text,) if task.search_text else ())
+        if "type" in actions:
+            for i, text in enumerate(texts):
+                for replace in (True, False):
+                    suffix = "" if i == 0 and replace else f"-{i}-{'replace' if replace else 'insert'}"
+                    candidates.append(Candidate("type-" + ref + suffix,
+                        f"{'Replace' if replace else 'Insert into'} {role} {name!r}: {text!r}.",
+                        "browser_type", {**common, "ref": ref, "text": text, "replace": replace}))
+        if "click" in actions:
+            candidates.append(Candidate("click-" + ref, f"Click {role} {name!r}.", "browser_click",
                 {**common, "ref": ref, "input_route": "dom_event"}))
+        if accepts is not None:
+            for action in ("hover", "right_click", "double_click"):
+                args = {**common, "ref": ref, "action": action}
+                if accepts("browser_pointer", args):
+                    candidates.append(Candidate(f"pointer-{action}-{ref}", f"{action} {role} {name!r}.", "browser_pointer", args))
+            for direction, delta in (("up", -500), ("down", 500)):
+                args = {**common, "ref": ref, "action": "scroll", "delta_y": delta}
+                if accepts("browser_pointer", args):
+                    candidates.append(Candidate(f"pointer-scroll-{direction}-{ref}", f"Scroll {direction} at {role} {name!r}.", "browser_pointer", args))
     for row in snapshot.get("content_refs", []):
         ref, name = row.get("ref"), row.get("name") or ""
         if row.get("role") not in {"region", "article"} or not isinstance(name, str):
-            continue
-        if not any(term.casefold() in name.casefold() for term in task.observation_queries + task.navigation_terms):
             continue
         if not isinstance(ref, str) or not ref.startswith(generation + ":") or ref in seen:
             raise ValueError("duplicate or stale content reference")
@@ -426,7 +449,14 @@ def build_browser_candidates(snapshot: dict, task: BrowserTask) -> list[Candidat
     if continuation:
         candidates.append(Candidate("read-more", "Read the next available page-evidence segment.",
             "get_browser_state", {**common, "snapshot_format": "semantic_v2", "continuation": continuation}))
+    if accepts is not None:
+        args = {**common, "action": "inspect"}
+        if accepts("browser_dialog", args):
+            candidates.append(Candidate("dialog-inspect", "Inspect the current browser dialog.", "browser_dialog", args))
+        targets = [{"ref": row["ref"]} for row in snapshot.get("refs", [])
+                   if not row.get("states", {}).get("disabled") and row.get("visibility") != "hidden"]
+        candidates += explicit_candidates(task.tool_options, {**common, "snapshot_id": generation,
+                                          "result": last_result or {}}, accepts, targets)
+        candidates = [c for c in candidates if c.tool is None or accepts(c.tool, dict(c.arguments))]
     candidates.append(Candidate("finish", "Hand the relevant source passage to the calling assistant for review and answering. You navigate; do not answer the question yourself or claim verification.", None, {}))
-    if len(candidates) > 62:
-        raise ValueError("research candidate limit exceeded")
     return candidates + _reserved_candidates()

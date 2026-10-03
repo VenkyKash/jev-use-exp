@@ -24,7 +24,7 @@ from core import (
     parse_visual_regions,
     validate_choice,
 )
-from jev_adapter import choose_live, choose_mock_adapter, choose_with_typesafe
+from jev_adapter import choose_live, choose_mock_adapter, choose_with_typesafe, visual_decision_state
 
 
 def fixture_state(fixture_url: str) -> dict[str, str | None]:
@@ -64,12 +64,23 @@ def reset_fixture(fixture_url: str) -> None:
 
 
 class Driver:
-    def __init__(self, session: ClientSession, label: str) -> None:
+    def __init__(self, session: ClientSession, label: str, schemas=None) -> None:
         self.session = session
         self.label = label
+        self.schemas = schemas or {}
+
+    def accepts(self, name, arguments):
+        from native_driver import NativeDriver
+        return NativeDriver(self.session, self.label, self.schemas).accepts(name, arguments)
 
     async def call(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-        result = await self.session.call_tool(name, {**arguments, "session": self.label})
+        from driver_candidates import thaw
+        arguments = thaw(arguments)
+        if self.schemas and not self.accepts(name, arguments):
+            raise ValueError("unsupported Driver arguments")
+        if not self.schemas or "session" in self.schemas.get(name, {}).get("properties", {}):
+            arguments["session"] = self.label
+        result = await self.session.call_tool(name, arguments)
         if result.isError:
             raise RuntimeError(f"{name} failed: {result.content}")
         data = result.structuredContent
@@ -184,26 +195,46 @@ async def run(args: argparse.Namespace) -> str:
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
-            advertised_tools = (await session.list_tools()).tools
+            advertised_tools, cursor = [], None
+            while True:
+                page = await session.list_tools(cursor=cursor)
+                advertised_tools.extend(page.tools)
+                cursor = page.nextCursor
+                if not cursor:
+                    break
             available_tools = {tool.name for tool in advertised_tools}
             capture_bound_click = supports_capture_bound_click(advertised_tools)
-            driver = Driver(session, label)
+            driver = Driver(session, label, {tool.name: tool.inputSchema for tool in advertised_tools})
             if task:
                 required = {"browser_prepare", "list_windows", "get_browser_state", "browser_navigate", "browser_type", "browser_click"}
                 if not required.issubset(available_tools):
                     raise ValueError("required browser tools unavailable")
                 write_event(log_path, {"event": "browser_capabilities", "tools": sorted(required)})
-            prepared = await driver.call(
-                "browser_prepare",
-                {"allow_launch": True, "profile": {"mode": "isolated_new"}},
-            )
-            pid = int(prepared["prepared_pid"])
-            window = await wait_for_window(driver, pid)
+            if task and getattr(args, "pid", None):
+                pid = args.pid
+                window = {"window_id": args.window_id}
+            else:
+                prepared = await driver.call(
+                    "browser_prepare",
+                    {"allow_launch": True, "profile": {"mode": "isolated_new"}},
+                )
+                pid = int(prepared["prepared_pid"])
+                window = await wait_for_window(driver, pid)
             bound = await driver.call(
                 "get_browser_state", {"pid": pid, "window_id": window["window_id"]}
             )
             target_id = bound["target_id"]
-            tab_id = select_tab_id(bound["tabs"])
+            tabs = bound["tabs"]
+            if task and getattr(args, "pid", None):
+                requested_url = getattr(args, "tab_url", None)
+                matches = [t for t in tabs if t.get("url") == requested_url] if requested_url else [t for t in tabs if t.get("active")]
+                if not requested_url and not matches and len(tabs) == 1:
+                    matches = tabs
+                if len(matches) != 1:
+                    raise ValueError("ambiguous existing tabs; supply an exact --tab-url")
+                tab_id = matches[0]["tab_id"]
+            else:
+                tab_id = select_tab_id(tabs)
             await driver.call(
                 "browser_navigate",
                 {"target_id": target_id, "tab_id": tab_id, "url": task.start_url if task else args.fixture_url},
@@ -212,6 +243,7 @@ async def run(args: argparse.Namespace) -> str:
             if task:
                 return await run_research_loop(driver, task, target_id, tab_id, args.max_steps, log_path)
 
+            previous_observation = None
             for step in range(1, args.max_steps + 1):
                 oracle = fixture_state(args.fixture_url)
                 current = classify(oracle.get("submitted"), token, steps=step - 1, max_steps=args.max_steps)
@@ -251,8 +283,10 @@ async def run(args: argparse.Namespace) -> str:
                     )
                 else:
                     choice, confidence, probabilities = await asyncio.to_thread(
-                        choose_live, candidates, snapshot, visual, history
+                        choose_live, candidates, snapshot, visual, history, previous_observation
                     )
+                previous_observation = dict(page=snapshot.get("page"), outline=snapshot.get("outline"),
+                                            visual=visual_decision_state(visual))
                 if choice is None:
                     return "abstained"
                 candidate = validate_choice(
@@ -353,7 +387,11 @@ async def run_research_loop(driver, task, target_id, tab_id, max_steps, log_path
     import hashlib
     emit = lambda event: write_event(log_path, event)
     history, visits = [], {}
+    previous_observation = None
     snapshot = None
+    candidate_path = ()
+    last_result = None
+    from driver_candidates import choice_menu, thaw
     # Tests inject a chooser explicitly; CLI always uses the audited real SDK.
     with (nullcontext(None) if chooser else audited_client(emit)) as client:
         for step in range(1, max_steps + 1):
@@ -368,11 +406,13 @@ async def run_research_loop(driver, task, target_id, tab_id, max_steps, log_path
                 return "outside_allowed_hosts"
             emit(dict(event="browser_evidence", step=step, snapshot=snapshot))
             fingerprint = hashlib.sha256(json.dumps([snapshot.get("page", {}).get("url"), snapshot.get("outline")], sort_keys=True).encode()).hexdigest()
-            visits[fingerprint] = visits.get(fingerprint, 0) + 1
+            if not candidate_path:
+                visits[fingerprint] = visits.get(fingerprint, 0) + 1
             if visits[fingerprint] > 3:
                 emit(dict(event="outcome", outcome="no_progress"))
                 return "no_progress"
-            candidates = build_browser_candidates(snapshot, task)
+            candidates = build_browser_candidates(snapshot, task, getattr(driver, "accepts", None), last_result)
+            candidates, groups = choice_menu(candidates, candidate_path)
             emit(dict(event="browser_candidates", step=step,
                       candidates=[dict(id=c.id, description=c.description) for c in candidates]))
             try:
@@ -380,12 +420,19 @@ async def run_research_loop(driver, task, target_id, tab_id, max_steps, log_path
                     choice, confidence, probabilities = await chooser(candidates, snapshot, history)
                 else:
                     choice, confidence, probabilities = await asyncio.to_thread(
-                        choose_with_typesafe, client, candidates, snapshot, None, history[-12:], goal=task.goal)
+                        choose_with_typesafe, client, candidates, snapshot, None, history[-12:], goal=task.goal,
+                        before=previous_observation, schemas=getattr(driver, "schemas", {}), groups=groups)
                 candidate = validate_choice(choice, candidates)
             except Exception as error:
                 emit(dict(event="outcome", outcome="provider_failed", **error_details(error)))
                 return "provider_failed"
             emit(dict(event="decision", step=step, selected_id=choice, confidence=confidence, probabilities=probabilities))
+            if choice in groups:
+                history.append(dict(candidate=choice, confidence=confidence, probabilities=probabilities,
+                                    description=candidate.description, outcome="candidate_group_selected", executed=False))
+                candidate_path += (choice,)
+                continue
+            candidate_path = ()
             if choice in {"finish", "abstain"}:
                 from evidence import browser_handoff
                 if choice == "finish":
@@ -393,12 +440,18 @@ async def run_research_loop(driver, task, target_id, tab_id, max_steps, log_path
                 outcome = "review_required" if choice == "finish" else "abstained"
                 emit(dict(event="outcome", outcome=outcome, independently_verified=False))
                 return outcome
-            history.append(dict(candidate=choice, description=candidate.description))
+            history.append(dict(candidate=choice, description=candidate.description,
+                                confidence=confidence, probabilities=probabilities,
+                                outcome="reobserve" if not candidate.tool else "pending"))
+            previous_observation = dict(page=snapshot.get("page"), outline=snapshot.get("outline"), visual=None)
             snapshot = None
             if candidate.tool:
-                emit(dict(event="dispatch", step=step, tool=candidate.tool, arguments=dict(candidate.arguments)))
+                emit(dict(event="dispatch", step=step, tool=candidate.tool, arguments=thaw(candidate.arguments)))
                 try:
-                    result = await driver.call(candidate.tool, dict(candidate.arguments))
+                    result = await driver.call(candidate.tool, thaw(candidate.arguments))
+                    last_result = result
+                    history[-1].update(outcome="tool_returned", driver_effect=result.get("effect"))
+                    emit(dict(event="tool_result", step=step, tool=candidate.tool, result=result))
                 except Exception as error:
                     emit(dict(event="outcome", outcome="unknown", **error_details(error)))
                     return "unknown"  # Never retry uncertain actions.
@@ -415,11 +468,18 @@ def parse_args() -> argparse.Namespace:
         "--fixture-url", type=validate_fixture_url, default="http://127.0.0.1:8765/"
     )
     parser.add_argument("--token")
-    parser.add_argument("--task", help="declarative public-web research JSON; preserves the fixture demo when omitted")
+    parser.add_argument("--task", help="declarative browser task JSON; preserves the fixture demo when omitted")
+    parser.add_argument("--pid", type=int, help="attach to an existing browser process")
+    parser.add_argument("--window-id", type=int, help="exact existing browser window")
+    parser.add_argument("--tab-url", help="exact observed tab URL to resolve ambiguous existing tabs")
     parser.add_argument("--max-steps", type=int, default=4)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--log", help="optional JSONL output path")
     args = parser.parse_args()
+    if bool(args.pid) != bool(args.window_id) or (args.pid is not None and min(args.pid, args.window_id) <= 0):
+        parser.error("supply both positive --pid and --window-id")
+    if (args.pid or args.tab_url) and not args.task:
+        parser.error("attachment options require --task")
     if args.task and not 1 <= args.max_steps <= 50:
         parser.error("max steps must be 1..50")
     return args

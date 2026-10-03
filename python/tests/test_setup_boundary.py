@@ -29,4 +29,4 @@ class SetupBoundaryTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(driver.calls), 1)
         self.assertEqual(driver.calls[0][0], "launch_app")
         self.assertEqual(set(chooser.requests[0]["criteria"]), {"reobserve", "abstain"})
-        self.assertTrue(chooser.requests[0]["observation"]["elements"])
+        self.assertTrue(chooser.requests[0]["observation"]["current"]["elements"])
