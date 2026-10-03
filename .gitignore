@@ -6,3 +6,5 @@ __pycache__/
 runs/
 proof*/
 .env
+tools/jules-discord-bot/
+render.yaml
