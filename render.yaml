@@ -1,0 +1,16 @@
+services:
+  - type: worker
+    name: jules-discord-bot
+    env: docker
+    dockerfilePath: tools/jules-discord-bot/Dockerfile
+    dockerContext: tools/jules-discord-bot
+    autoDeploy: true
+    envVars:
+      - key: DISCORD_BOT_TOKEN
+        sync: false
+      - key: JULES_API_KEY
+        sync: false
+      - key: GITHUB_REPO
+        value: VenkyKash/jev-use-exp
+      - key: DEFAULT_BRANCH
+        value: jules
