@@ -19,9 +19,55 @@ class ProviderChoice:
     model: str | None
 
 
+def check_and_increment_api_budget() -> int | None:
+    import fcntl
+    import os
+    import tempfile
+    from pathlib import Path
+    from native_errors import DiagnosticError
+
+    limit_str = os.getenv("TYPESAFE_API_CALL")
+    if not limit_str:
+        return None
+
+    try:
+        limit = int(limit_str)
+    except ValueError:
+        return None
+
+    session_id = os.getenv("TYPESAFE_SESSION_ID", "default").strip()
+    lock_file = Path(tempfile.gettempdir()) / f".typesafe_calls_{session_id}.lock"
+
+    with open(lock_file, "a+", encoding="utf-8") as f:
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+        try:
+            f.seek(0)
+            content = f.read().strip()
+            count = int(content) if content.isdigit() else 0
+
+            if count >= limit:
+                raise DiagnosticError(
+                    "typesafe_call_budget_exhausted",
+                    f"TYPESAFE_API_CALL limit of {limit} reached for session '{session_id}' ({count}/{limit} used)",
+                    calls_used=count,
+                    limit=limit,
+                    session_id=session_id,
+                )
+
+            new_count = count + 1
+            f.seek(0)
+            f.truncate()
+            f.write(str(new_count))
+            f.flush()
+            return new_count
+        finally:
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+
+
 def checked_system_one(client, *, state, questions):
     from decision_payload import validate_request_budget
     validate_request_budget(state, questions)
+    check_and_increment_api_budget()
     return client.system_one(state=state, questions=questions)
 
 
