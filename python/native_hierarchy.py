@@ -44,7 +44,7 @@ class HierarchyView:
             sibling_count=len(siblings), range_start=self.offset,
             range_end=self.offset+len(visible), total_controls=len(self.nodes),
             branches=[dict(id=i, child_count=len(self.children[i])) for i in visible],
-            semantics="Only this branch/page is exposed. Expand shows children, not a click. Other controls remain accessible via parent, root and sibling pages. Missing parents are shown at root; no semantic groups are invented.")
+            semantics="Interactive container roles (menus, popups, dropdowns) are exploratory branches. Only this branch/page is exposed. Expand shows children, not a click. Other controls remain accessible via parent, root and sibling pages. Missing parents are shown at root; no semantic groups are invented.")
         return replace(self.observation, elements=tuple(self.nodes[i] for i in ids),
                        complete=False, readback_text="", menu_paths=(), inspection=inspection,
                        root_context=self.root_context)
@@ -55,8 +55,23 @@ class HierarchyView:
         for i in siblings[self.offset:self.offset+self.page_size]:
             if self.children[i]:
                 e = self.nodes[i]
+
+                # Gather up to 5 non-empty labels or keywords from descendants to preview
+                preview_labels = []
+                queue = list(self.children[i])
+                while queue and len(preview_labels) < 5:
+                    child_id = queue.pop(0)
+                    child_node = self.nodes[child_id]
+                    if child_node.label and child_node.label.strip():
+                        preview_labels.append(child_node.label.strip()[:30])
+                    queue.extend(self.children[child_id])
+
+                preview_text = ""
+                if preview_labels:
+                    preview_text = f" [contains: {', '.join(preview_labels)}...]"
+
                 choices.append(Candidate(f"tree-expand-{i}",
-                    f"Inspect children of {e.role} {e.label[:120]!r}, element {i}; {len(self.children[i])} children. Local read only, no click.", None, {}))
+                    f"Inspect children of {e.role} {e.label[:120]!r}{preview_text}, element {i}; {len(self.children[i])} children. Local read only, no click.", None, {}))
         if self.parent is not None:
             choices.extend([Candidate("tree-parent", "Inspect parent branch; no UI action.", None, {}),
                             Candidate("tree-root", "Return to full hierarchy index at root; no UI action.", None, {})])

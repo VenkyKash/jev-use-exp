@@ -61,6 +61,7 @@ def decision_request(task: Task, observation: Observation | None,
             "context_scope": ("Local hierarchy branch/page plus its parent. Other controls remain reachable through inspection choices; see inspection metadata."
                               if observation and (observation.inspection or {}).get("kind") == "local_hierarchy"
                               else "All normalized window-content elements; no first-N or candidate-target filtering. Readback text may be bounded separately."),
+            "exploration_prompt": "Ensure you inspect relevant container types (menus, popups, dropdowns) when the specific target is not directly present at the current level. Containers might hide their contents.",
         },
         "criteria": {candidate.id: candidate.description for candidate in options},
     }
