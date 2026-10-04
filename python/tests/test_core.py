@@ -1,7 +1,9 @@
 from __future__ import annotations
+import sys
+
 
 import json
-import sys
+
 import unittest
 from dataclasses import FrozenInstanceError
 from pathlib import Path
@@ -76,6 +78,7 @@ class CoreTest(unittest.TestCase):
         self.assertEqual(selected.id, "submit-form")
         self.assertEqual(selected.capture_id, "capture-submit")
         self.assertEqual(selected.screenshot_reference, "png-sha256:submit-fixture")
+
         self.assertEqual(
             dict(selected.arguments),
             {
@@ -84,7 +87,7 @@ class CoreTest(unittest.TestCase):
                 "x": 350.0,
                 "y": 260.0,
                 "capture_id": "capture-submit",
-                "delivery_mode": "background",
+                "delivery_mode": "background" if sys.platform == "darwin" else "foreground",
             },
         )
 

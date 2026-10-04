@@ -1,3 +1,4 @@
+import sys
 """Generate options from observed roles, never from an app-specific solution."""
 from dataclasses import dataclass
 from typing import Callable
@@ -42,8 +43,9 @@ def build_native_candidates(task: Task, observation: Observation,
                     actions=list(element.actions), parent=element.parent, candidate_ids=[],
                     reasons=["disabled"]))
             continue
+
         target = {"pid": observation.pid, "window_id": observation.window_id,
-                  "delivery_mode": "background"}
+                  "delivery_mode": "background" if sys.platform == "darwin" else "foreground"}
         if element.token:
             target["element_token"] = element.token
         else:

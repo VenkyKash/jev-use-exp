@@ -1,4 +1,5 @@
 from __future__ import annotations
+import sys
 
 import math
 from dataclasses import dataclass, field
@@ -292,7 +293,7 @@ def build_candidates(
                         "x": x,
                         "y": y,
                         "capture_id": visual.capture_id,
-                        "delivery_mode": "background",
+                        "delivery_mode": "background" if sys.platform == "darwin" else "foreground",
                     },
                     capture_id=visual.capture_id,
                     screenshot_reference=visual.screenshot_reference,

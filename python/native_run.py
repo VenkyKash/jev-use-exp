@@ -315,8 +315,8 @@ def main():
     args = parse_args()
     if not (args.inspect or args.doctor) and not os.getenv("TYPESAFE_API_KEY"):
         raise SystemExit("TYPESAFE_API_KEY is required; no app was opened and no fallback will run")
-    if sys.platform != "darwin" and not args.doctor:
-        raise SystemExit("native v0 currently supports macOS AX roles only")
+    if sys.platform not in ("darwin", "linux") and not args.doctor:
+        raise SystemExit("native v0 currently supports macOS and Linux AX roles")
     stream = args.log.open("x", encoding="utf-8") if args.log else None
     def emit(event):
         line = json.dumps(event, sort_keys=True)

@@ -1,3 +1,4 @@
+import sys
 """Schema-backed Driver options and bounded, lossless Jev choice menus.
 
 Finite UI options are automatic. Open-ended arguments (paths, rectangles, scripts,
@@ -167,7 +168,8 @@ KEYS = ("return", "tab", "escape", "space", "backspace", "delete",
 def native_extras(task, observation, accepts, result=None):
     candidates = []
     base = dict(pid=observation.pid, window_id=observation.window_id)
-    background = {**base, "delivery_mode": "background"}
+
+    background = {**base, "delivery_mode": "background" if sys.platform == "darwin" else "foreground"}
     availability = observation.availability or {}
     unavailable = not observation.elements or availability.get("degraded") is True
     has_geometry = set()
@@ -192,7 +194,7 @@ def native_extras(task, observation, accepts, result=None):
                 candidates.append(Candidate(id + "-foreground",
                     description + " Briefly front this exact window for foreground delivery, then restore prior focus.",
                     tool, foreground))
-            if route.get("status") == "refused":
+            if route.get("status") == "refused" and sys.platform == "darwin":
                 return
         if accepts(tool, args):
             candidates.append(Candidate(id, description, tool, args))
@@ -219,13 +221,13 @@ def native_extras(task, observation, accepts, result=None):
         if element.actions or element.role in {"AXRow", "AXCell", "AXLink", "AXTextField", "AXTextArea"}:
             for tool in ("double_click", "right_click"):
                 add(f"{tool}-{element.index}", f"{tool} {context}.", tool,
-                    {**target, "delivery_mode": "background"})
+                    {**target, "delivery_mode": "background" if sys.platform == "darwin" else "foreground"})
         if element.index not in has_geometry:
             for action, advertised in (("show_menu", "showmenu"), ("pick", "pick"),
                                         ("confirm", "confirm"), ("cancel", "cancel"), ("open", "open")):
                 if advertised in actions:
                     add(f"action-{element.index}-{action}", f"{action} on {context}.", "click",
-                        {**target, "delivery_mode": "background", "action": action})
+                        {**target, "delivery_mode": "background" if sys.platform == "darwin" else "foreground", "action": action})
         if element.role in {"AXTextField", "AXTextArea", "AXSearchField", "AXComboBox", "AXPopUpButton", "AXSlider", "AXStepper"}:
             for i, text in enumerate(task.inputs):
                 add(f"set-{element.index}-{i}", f"Replace value of {context} with {text!r}.",
