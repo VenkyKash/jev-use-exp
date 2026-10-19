@@ -33,14 +33,11 @@ err() {
 # ------------------------------------------------------------------------------
 # 1. Environment & Pre-requisites Check
 # ------------------------------------------------------------------------------
-log "Step 1: Checking environment prerequisites..."
-
-if [[ -z "${TYPESAFE_API_KEY:-}" ]]; then
-  if [[ -f "${PROJECT_ROOT}/.env" ]]; then
-    log "Sourcing local .env file..."
-    # shellcheck disable=SC1091
-    source "${PROJECT_ROOT}/.env"
-  fi
+# Ensure git working tree is completely clean for Jules autonomous runs
+if command -v git >/dev/null 2>&1 && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  log "Resetting working tree to ensure clean git state for Jules..."
+  git reset --hard HEAD || true
+  git clean -fd || true
 fi
 
 if [[ -z "${TYPESAFE_API_KEY:-}" ]]; then
