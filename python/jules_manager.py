@@ -77,13 +77,20 @@ class JulesClient:
         clean_id = session_id.split("/")[-1]
         return self._request("GET", f"sessions/{clean_id}")
 
-    def create_session(self, prompt: str, source_id: str, branch: str = "jules") -> dict[str, Any]:
+    def create_session(self, prompt: str, source_id: str, branch: str = "jules", title: str | None = None) -> dict[str, Any]:
         """Create a new autonomous coding session in Jules."""
-        payload = {
+        payload: dict[str, Any] = {
             "prompt": prompt,
-            "source": source_id if "/" in source_id else f"sources/{source_id}",
-            "branch": branch
+            "sourceContext": {
+                "source": source_id if "/" in source_id else f"sources/{source_id}",
+                "githubRepoContext": {
+                    "startingBranch": branch
+                },
+                "environmentVariablesEnabled": True
+            }
         }
+        if title:
+            payload["title"] = title
         return self._request("POST", "sessions", payload)
 
     def approve_plan(self, session_id: str) -> dict[str, Any]:
@@ -102,7 +109,13 @@ class JulesClient:
         query = f"pageSize={page_size}"
         if page_token:
             query += f"&pageToken={urllib.parse.quote(page_token)}"
-        return self._request("GET", f"sessions/{clean_id}/activities?{query}")
+        try:
+            return self._request("GET", f"sessions/{clean_id}/activities?{query}")
+        except RuntimeError as exc:
+            if "HTTP 404" in str(exc):
+                # When queued or initializing, activities endpoint may return 404 until first event
+                return {"activities": []}
+            raise
 
 
 def manage_session(client: JulesClient, session_id: str, auto_approve: bool = True, interval: int = 6) -> None:
