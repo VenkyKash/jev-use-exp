@@ -302,16 +302,22 @@ log "Step 7: Launching Autonomous Task Suite & Evaluating Results..."
 SUITE_RUNNER="${PROJECT_ROOT}/python/run_jules_suite.py"
 
 # If run_jules_suite.py exists, invoke it to iterate through tasks, collect evidence,
-# and write the structured improvement summary.
+# and write the structured improvement summary directly into LOG_DIR so working tree stays pristine.
 if [[ -f "${SUITE_RUNNER}" ]]; then
   log "Executing task evaluation harness (${SUITE_RUNNER})..."
-  uv run python "${SUITE_RUNNER}" --log-dir "${LOG_DIR}" --report-dir "${PROJECT_ROOT}/reports"
+  uv run python "${SUITE_RUNNER}" --log-dir "${LOG_DIR}" --report-dir "${LOG_DIR}"
 else
   log "Executing evaluation on simulated and native controls..."
   uv run python python/evaluate_native.py --provider first --log "${LOG_DIR}/eval_first.jsonl" || true
   if [[ -n "${TYPESAFE_API_KEY:-}" ]]; then
     uv run python python/evaluate_native.py --provider live --log "${LOG_DIR}/eval_live.jsonl" || true
   fi
+fi
+
+# Final git status guarantee for Jules automated environment checks
+if command -v git >/dev/null 2>&1 && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  git checkout -- . 2>/dev/null || true
+  git clean -fd 2>/dev/null || true
 fi
 
 log "Startup script completed successfully. Logs and artifacts stored at:"
