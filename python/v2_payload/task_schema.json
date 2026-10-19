@@ -1,0 +1,55 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CompiledTask",
+  "type": "object",
+  "properties": {
+    "goal": {
+      "type": "string",
+      "description": "Clear declarative goal describing the desired end state, including any limits or stopping condition. Do not prescribe a click sequence."
+    },
+    "app": {
+      "type": "string",
+      "description": "Application display name (e.g. 'GridCraft', 'FilmCraft')."
+    },
+    "inputs": {
+      "type": "array",
+      "description": "Exact literal values to type into fields or cells. Do not include loose condition numbers like limits.",
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 8
+    },
+    "brief": {
+      "type": "object",
+      "properties": {
+        "input_purposes": {
+          "type": "array",
+          "description": "Exact semantic purpose and target for each item in inputs in 1-to-1 order.",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 8
+        },
+        "success": {
+          "type": "array",
+          "description": "Observable criteria indicating the goal is complete.",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 8
+        }
+      },
+      "required": ["input_purposes", "success"],
+      "additionalProperties": false
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      },
+      "maxItems": 0
+    }
+  },
+  "required": ["goal", "app", "inputs", "brief", "checks"],
+  "additionalProperties": false
+}

@@ -52,7 +52,7 @@ class Task:
         options = raw.get("tool_options", [])
         brief = raw.get("brief")
         if brief is not None:
-            if not isinstance(brief, dict) or set(brief) - {"required_sequence", "success", "relevance", "input_purposes"}:
+            if not isinstance(brief, dict) or set(brief) - {"required_sequence", "success", "relevance", "input_purposes", "input_targets"}:
                 raise ValueError("invalid task brief")
             for values in brief.values():
                 if not isinstance(values, list) or len(values) > 8 or any(not isinstance(v, str) or len(v) > 1000 for v in values):
@@ -94,6 +94,7 @@ class Observation:
     root_context: dict | None = None
     availability: dict | None = None
     geometry: dict | None = None
+    capture_id: str | None = None
 
     def compact(self) -> list[dict[str, Any]]:
         return [dict(id=e.index, role=e.role, label=e.label, value=e.value,

@@ -1,0 +1,43 @@
+{
+  "app": "GridCraft",
+  "brief": {
+    "input_targets": [
+      "A1",
+      "B1",
+      "A2",
+      "B2",
+      "A3",
+      "B3"
+    ],
+    "input_purposes": [
+      "Header for Column A in cell A1",
+      "Header for Column B in cell B1",
+      "First even number in cell A2",
+      "First odd number in cell B2",
+      "Formula to increment even numbers in cell A3 down Column A",
+      "Formula to increment odd numbers in cell B3 down Column B"
+    ],
+    "required_sequence": [
+      "Enter headers 'Even' in A1 and 'Odd' in B1",
+      "Enter starting numbers '2' in A2 and '1' in B2",
+      "Enter formula in A3 and extend Column A down to row 16 (value 30)",
+      "Enter formula in B3 and extend Column B down to row 16 (value 29)",
+      "Verify completed table and select done"
+    ],
+    "success": [
+      "GridCraft contains a two-column layout with headers 'Even' in A1 and 'Odd' in B1",
+      "Column A displays even numbers from 2 up to 30 (Row 16)",
+      "Column B displays odd numbers from 1 up to 29 (Row 16)"
+    ]
+  },
+  "checks": [],
+  "goal": "Create a two-column list in GridCraft containing even and odd numbers limited to 30.",
+  "inputs": [
+    "Even",
+    "Odd",
+    "2",
+    "1",
+    "=A2+2",
+    "=B2+2"
+  ]
+}

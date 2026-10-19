@@ -45,7 +45,7 @@ When navigating hierarchical trees, containers often hide their contents behind 
 ## 5. Strict Constraints (per `AGENTS.md`)
 You must strictly adhere to the project rules:
 - **No Cua Driver Hacks:** Do not modify Cua Driver to fit this integration. Keep changes in this example/runner repository.
-- **No Silent Takeovers:** Diagnostics must be observational. Jules/Codex must not silently take over Jev navigation, use manual fallback logic, or script the app sequence.
+- **No Silent Takeovers:** Diagnostics must be observational. The assistant must not silently take over Jev navigation, use manual fallback logic, or script the app sequence.
 - **No Fudging Coordinates:** Each choice dispatches one click. No random offsets, expanded hitboxes, or automatic retries.
 - **No Merging:** Keep one executable ID with descriptive aliases, not competing probability slots.
 - **Preserve Context:** The native task context is the caller's verbatim prompt, not an added plan.

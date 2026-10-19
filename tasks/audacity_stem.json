@@ -1,0 +1,25 @@
+{
+  "app": "Audacity",
+  "goal": "Import the sample sine wave audio stem, duplicate the track, and adjust playback volume in Audacity.",
+  "inputs": [
+    "fixtures/audio/sample_sine_440hz.wav"
+  ],
+  "brief": {
+    "input_targets": [
+      "File Open or Import Audio Dialog"
+    ],
+    "input_purposes": [
+      "Path to sample sine wave audio track: fixtures/audio/sample_sine_440hz.wav"
+    ],
+    "required_sequence": [
+      "Open or import sample audio file fixtures/audio/sample_sine_440hz.wav",
+      "Verify the audio waveform track appears in the workspace",
+      "Select track and choose Duplicate or adjust gain slider",
+      "Verify audio session has active tracks"
+    ],
+    "success": [
+      "Audacity workspace contains an active audio track loaded from sample_sine_440hz.wav"
+    ]
+  },
+  "checks": []
+}

@@ -1,0 +1,18 @@
+{
+  "app": "Pinta",
+  "goal": "Draw a simple yellow canary bird with an orange beak on a blank canvas in Pinta.",
+  "inputs": [],
+  "brief": {
+    "required_sequence": [
+      "Select the Ellipse or Paintbrush tool in Pinta",
+      "Select yellow color from the color palette",
+      "Draw the body and head of the canary bird",
+      "Select orange color and draw a small triangle beak",
+      "Verify the drawing on the canvas"
+    ],
+    "success": [
+      "Canvas contains a drawing with yellow and orange color elements representing a canary bird"
+    ]
+  },
+  "checks": []
+}

@@ -12,7 +12,7 @@ Python-only and currently gated to macOS accessibility roles.
   titled window can be bound when the other windows are explicitly offscreen and
   untitled. Multiple named documents or visible untitled windows remain ambiguous.
 - Explicit app launch is deterministic setup; Jev chooses subsequent mutations.
-  No Codex API or fallback model.
+  No external agent API or fallback model.
 - A generic builder offers supported controls (including web and unlabelled
   controls), keyboard input, replacement, scrolling and supplied text. Application
   menu paths are preserved as invoke_menu choices while menu trees are kept out
@@ -178,7 +178,7 @@ not portable outside this checkout; native v0's tests do not need the parent.
   it stopped through cycle detection or the decision budget.
 - No `TYPESAFE_API_KEY` was available. Live Jev evaluation and native desktop
   mutation were not run. The existing Calculator app was not running during the
-  read-only preflight; no manual launch or Codex action sequence was substituted.
+  read-only preflight; no manual launch or assistant action sequence was substituted.
 
 The initial dependency diff added an explicit declaration for already-locked
 `jsonschema`; HTTP auditing subsequently declared already-locked `httpx2`.
@@ -201,7 +201,7 @@ the request. A missing request ID remains null rather than being invented.
 
 An experimental repository-local [Jev skill](.agents/skills/jev-computer-use/SKILL.md)
 now documents test drives and gap capture. It is not installed globally; when
-working outside this nested repository, ask Codex to read that file explicitly.
+working outside this nested repository, read that file explicitly.
 This packaging is for iterative testing, not certification that all apps pass.
 
 Native runs emit `candidate_coverage` diagnostic events without changing candidate

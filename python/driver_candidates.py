@@ -202,7 +202,11 @@ def native_extras(task, observation, accepts, result=None):
     # Typing requires an observed field target. No generic focused typing:
     # window activation alone does not establish the receiving control.
     for keys in (("cmd", "a"), ("cmd", "c"), ("cmd", "v"), ("cmd", "z"),
-                 ("cmd", "shift", "z"), ("shift", "tab"), ("cmd", "t")):
+                 ("cmd", "shift", "z"), ("shift", "tab"), ("cmd", "t"),
+                 ("cmd", "l"),
+                 ("shift", "down"), ("shift", "up"), ("cmd", "d"),
+                 ("cmd", "shift", "down"), ("cmd", "shift", "up"),
+                 ("cmd", "shift", "right"), ("cmd", "shift", "left")):
         add("hotkey-" + "-".join(keys), f"Press hotkey {'+'.join(keys)} in the focused control.",
             "hotkey", {**background, "keys": list(keys)})
     for direction in ("up", "down", "left", "right"):

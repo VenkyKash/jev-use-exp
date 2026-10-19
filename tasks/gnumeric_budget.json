@@ -1,0 +1,42 @@
+{
+  "app": "Gnumeric",
+  "goal": "Create a monthly budget table with Income 5000 and Rent 1800, then calculate Net Savings in Gnumeric.",
+  "inputs": [
+    "Income",
+    "5000",
+    "Rent",
+    "1800",
+    "Net Savings",
+    "=B1-B2"
+  ],
+  "brief": {
+    "input_targets": [
+      "A1",
+      "B1",
+      "A2",
+      "B2",
+      "A3",
+      "B3"
+    ],
+    "input_purposes": [
+      "Label 'Income' in cell A1",
+      "Value '5000' in cell B1",
+      "Label 'Rent' in cell A2",
+      "Value '1800' in cell B2",
+      "Label 'Net Savings' in cell A3",
+      "Formula '=B1-B2' in cell B3"
+    ],
+    "required_sequence": [
+      "Enter Income and Rent labels in Column A",
+      "Enter values 5000 and 1800 in Column B",
+      "Enter formula =B1-B2 in cell B3 to calculate savings",
+      "Confirm cell B3 displays 3200"
+    ],
+    "success": [
+      "Gnumeric sheet has Income 5000 in row 1",
+      "Rent 1800 in row 2",
+      "Cell B3 evaluates to 3200"
+    ]
+  },
+  "checks": []
+}

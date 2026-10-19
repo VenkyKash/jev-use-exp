@@ -1,0 +1,40 @@
+{
+  "app": "Google Chrome",
+  "goal": "Open Google Chrome, navigate to https://sheets.new, enter headers 'Item' in A1 and 'Revenue' in B1, then create a new sheet tab named 'Summary' and enter 'Total' in A1.",
+  "inputs": [
+    "https://sheets.new",
+    "Item",
+    "Revenue",
+    "Summary",
+    "Total"
+  ],
+  "brief": {
+    "input_targets": [
+      "address_bar",
+      "A1",
+      "B1",
+      "sheet_tab_name",
+      "A1"
+    ],
+    "input_purposes": [
+      "URL to open a new Google Sheet",
+      "Header for Column A in Sheet1 cell A1",
+      "Header for Column B in Sheet1 cell B1",
+      "Name for the new second sheet tab",
+      "Label for summary metric in Summary sheet cell A1"
+    ],
+    "required_sequence": [
+      "Navigate to https://sheets.new in Google Chrome",
+      "Enter headers 'Item' in A1 and 'Revenue' in B1 in Sheet1",
+      "Add a new sheet tab and rename it to 'Summary'",
+      "Select cell A1 in the Summary tab and enter 'Total'",
+      "Verify both tabs exist with correct data and select done"
+    ],
+    "success": [
+      "A new Google Sheet is open in Google Chrome",
+      "Sheet1 contains 'Item' in A1 and 'Revenue' in B1",
+      "A second sheet tab named 'Summary' exists with 'Total' in A1"
+    ]
+  },
+  "checks": []
+}

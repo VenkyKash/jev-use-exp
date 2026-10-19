@@ -1,0 +1,21 @@
+{
+  "app": "Mousepad",
+  "goal": "Write meeting notes in Mousepad with project status and action items.",
+  "inputs": [
+    "Project Status: On Track\nAction Items:\n- Review Q3 budget\n- Deploy Jules VM test suite"
+  ],
+  "brief": {
+    "input_purposes": [
+      "Meeting notes text content for document body"
+    ],
+    "required_sequence": [
+      "Focus main text area in Mousepad",
+      "Type the meeting notes and action items",
+      "Verify text content is visible"
+    ],
+    "success": [
+      "Document editor contains Project Status and Action Items text"
+    ]
+  },
+  "checks": []
+}

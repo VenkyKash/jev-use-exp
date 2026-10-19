@@ -1,0 +1,20 @@
+{
+  "app": "Galculator",
+  "goal": "Calculate 125 × 8 using Galculator buttons.",
+  "inputs": [],
+  "brief": {
+    "required_sequence": [
+      "Click button 1, 2, 5",
+      "Click multiply button",
+      "Click button 8",
+      "Click equals button",
+      "Verify display shows 1000"
+    ],
+    "success": [
+      "Display shows 1000"
+    ]
+  },
+  "checks": [
+    {"role": "push button", "label": "Display", "equals": "1000"}
+  ]
+}

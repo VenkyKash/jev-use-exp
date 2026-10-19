@@ -1,0 +1,6 @@
+{
+  "goal": "Launch GridCraft (app on system), create a two column list of even and odd numbers; limit to 30",
+  "app": "GridCraft",
+  "inputs": ["even", "odd", "30"],
+  "checks": []
+}

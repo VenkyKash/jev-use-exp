@@ -158,13 +158,14 @@ def normalize(raw: dict[str, Any], pid: int, window_id: int, *, query: str | Non
                           returned_element_count=len(rows),
                           absence="unknown outside this partial view; reobserve restores the full view")
     from native_geometry import capture_geometry
+    cid = raw.get("capture_id")
     return Observation(snapshot, pid, window_id, tuple(scoped), excluded, complete, text, tuple(paths), capability,
                        geometry=capture_geometry(raw),
                        inspection=inspection, availability={
                            "degraded": raw.get("degraded", False),
                            "reason": raw.get("degraded_reason"),
                            **raw.get("window_visibility", {}),
-                       }, **metadata)
+                       }, capture_id=cid if isinstance(cid, str) else None, **metadata)
 
 
 class NativeDriver:
@@ -184,7 +185,15 @@ class NativeDriver:
             cursor = page.nextCursor
             if not cursor:
                 break
-        return cls(session, label, schemas)
+        session_label = None
+        if "start_session" in schemas:
+            try:
+                res = await session.call_tool("start_session", {"session": label})
+                if not getattr(res, "isError", False):
+                    session_label = label
+            except Exception:
+                pass
+        return cls(session, session_label, schemas)
 
     def accepts(self, tool: str, arguments: dict) -> bool:
         schema = self.schemas.get(tool)
@@ -193,7 +202,7 @@ class NativeDriver:
         args = thaw(arguments)
         if not set(args).issubset(schema.get("properties", {})):
             return False
-        if "session" in schema.get("properties", {}):
+        if self.label and "session" in schema.get("properties", {}):
             args["session"] = self.label
         return Draft202012Validator(schema).is_valid(args)
 
@@ -211,7 +220,7 @@ class NativeDriver:
                     prior = max(visible, key=lambda w: w.get("z_index") or 0)
                     self.restore_target = dict(pid=active["pid"], window_id=prior["window_id"])
             self.activation_attempted = True
-        if "session" in self.schemas[tool].get("properties", {}):
+        if self.label and "session" in self.schemas[tool].get("properties", {}):
             args["session"] = self.label
         try:
             result = await self.session.call_tool(tool, args)
@@ -243,10 +252,13 @@ class NativeDriver:
             target, self.restore_target = self.restore_target, None
             return await self.call("bring_to_front", target)
 
-    async def observe(self, pid: int, window_id: int) -> Observation:
-        raw = await self.call("get_window_state", {
-            "pid": pid, "window_id": window_id, "include_screenshot": True,
-        })
+    async def observe(self, pid: int, window_id: int, include_screenshot: bool = True) -> Observation:
+        obs_args = {
+            "pid": pid, "window_id": window_id, "include_screenshot": include_screenshot,
+        }
+        if self.accepts("get_window_state", {**obs_args, "timeout_ms": 5000}):
+            obs_args["timeout_ms"] = 5000
+        raw = await self.call("get_window_state", obs_args)
         if self.accepts("list_windows", {"pid": pid}):
             windows = (await self.call("list_windows", {"pid": pid})).get("windows", [])
             window = next((w for w in windows if w.get("window_id") == window_id), {})

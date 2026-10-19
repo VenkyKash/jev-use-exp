@@ -1,0 +1,45 @@
+{
+  "app": "Google Chrome",
+  "goal": "In Google Sheets, create a 2-column table of Quarter and Sales (Q1: 100, Q2: 150, Q3: 200, Q4: 250), select the range A1:B5, and insert a Column Chart via the Insert menu.",
+  "inputs": [
+    "https://sheets.new",
+    "Quarter",
+    "Sales",
+    "Q1",
+    "100",
+    "Q2",
+    "150"
+  ],
+  "brief": {
+    "input_targets": [
+      "address_bar",
+      "A1",
+      "B1",
+      "A2",
+      "B2",
+      "A3",
+      "B3"
+    ],
+    "input_purposes": [
+      "URL to create a new Google Sheet",
+      "Header for Quarter in A1",
+      "Header for Sales in B1",
+      "First period label in A2",
+      "First sales amount in B2",
+      "Second period label in A3",
+      "Second sales amount in B3"
+    ],
+    "required_sequence": [
+      "Navigate to Google Sheets",
+      "Enter table headers and data in A1:B5",
+      "Select range A1:B5",
+      "Open Insert menu and choose Chart",
+      "Confirm chart object is rendered on the canvas and select done"
+    ],
+    "success": [
+      "Google Sheets displays tabular data in A1:B5",
+      "A Chart object is rendered on the sheet canvas displaying Sales vs Quarter"
+    ]
+  },
+  "checks": []
+}

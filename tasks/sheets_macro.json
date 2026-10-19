@@ -1,0 +1,37 @@
+{
+  "app": "Google Chrome",
+  "goal": "In Google Sheets, record a macro named 'FormatHeader' that formats the active row with Bold (Cmd+B) and Center alignment, save the macro, and apply it to a new header row.",
+  "inputs": [
+    "https://sheets.new",
+    "FormatHeader",
+    "Product",
+    "Price"
+  ],
+  "brief": {
+    "input_targets": [
+      "address_bar",
+      "macro_name_input",
+      "A1",
+      "B1"
+    ],
+    "input_purposes": [
+      "URL to create a new Google Sheet",
+      "Name for the recorded macro in the save dialog",
+      "Header text in cell A1",
+      "Header text in cell B1"
+    ],
+    "required_sequence": [
+      "Navigate to Google Sheets",
+      "Open Extensions > Macros > Record macro",
+      "Select 'Use relative references' and apply Bold (Cmd+B) and Center alignment",
+      "Save macro with name 'FormatHeader'",
+      "Type new headers in A1:B1 and run Extensions > Macros > FormatHeader",
+      "Verify headers are styled and select done"
+    ],
+    "success": [
+      "A macro named 'FormatHeader' is recorded and saved under Extensions > Macros",
+      "Target header cells display Bold and centered formatting"
+    ]
+  },
+  "checks": []
+}

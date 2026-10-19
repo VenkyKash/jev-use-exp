@@ -1,0 +1,38 @@
+{
+  "app": "Google Chrome",
+  "goal": "In Google Sheets, enter starting values 10 and 20 in A1:A2, formula '=A1*2' in B1, fill down B1 to B5, then copy B1:B5 and paste special values into D1.",
+  "inputs": [
+    "https://sheets.new",
+    "10",
+    "20",
+    "=A1*2"
+  ],
+  "brief": {
+    "input_targets": [
+      "address_bar",
+      "A1",
+      "A2",
+      "B1"
+    ],
+    "input_purposes": [
+      "URL to create or open a Google Sheet",
+      "First starting seed value in A1",
+      "Second seed value in A2",
+      "Multiplication formula in B1"
+    ],
+    "required_sequence": [
+      "Navigate to Google Sheets",
+      "Enter seeds '10' in A1 and '20' in A2",
+      "Enter formula '=A1*2' in B1",
+      "Select range B1:B5 and fill down using Cmd+D",
+      "Copy range B1:B5 with Cmd+C, navigate to D1, and paste special values (Cmd+Shift+V)",
+      "Verify values in Column D and select done"
+    ],
+    "success": [
+      "Column A contains numbers 10 and 20",
+      "Column B contains calculated formula values down to row 5",
+      "Column D contains pasted values matching Column B without formulas"
+    ]
+  },
+  "checks": []
+}

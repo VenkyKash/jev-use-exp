@@ -1,0 +1,6 @@
+{
+  "goal": "Use Google Chrome to go to drive.google.com, open up a new sheet, two columns, one even and the other odd - limit the count to 30.",
+  "app": "Google Chrome",
+  "inputs": ["https://drive.google.com", "even", "odd", "30"],
+  "checks": []
+}

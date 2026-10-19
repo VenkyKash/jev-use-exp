@@ -23,6 +23,7 @@ from native_errors import error_details
 from native_audit import audited_client
 from native_jev import JevChooser, decision_request, validate_decision
 from evidence import evidence_handoff
+from v2_payload.run import run_loop_v2
 
 
 async def run_loop(task, driver, chooser, emit, *, target=None, max_steps=24,
@@ -264,6 +265,7 @@ def parse_args():
     parser.add_argument("--minimum-confidence", type=float, default=.1)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--hierarchy", action="store_true", help="Jev-directed local hierarchy inspection; default flat mode unchanged")
+    parser.add_argument("--payload", type=str, choices=["v1", "v2"], default="v1", help="Payload version to use")
     parser.add_argument("--log", type=Path, help="new JSONL file, never overwritten; contains UI and input text")
     args = parser.parse_args()
     if bool(args.pid) != bool(args.window_id) or (args.pid is not None and min(args.pid, args.window_id) <= 0):
@@ -297,11 +299,18 @@ async def execute(args, emit):
                 return "inspected"
             with audited_client(emit) as client:
                 try:
-                    return await run_loop(task, driver, JevChooser(client, emit=emit), emit,
-                        target=(args.pid, args.window_id) if args.pid else None,
-                        max_steps=args.max_steps, minimum_confidence=args.minimum_confidence,
-                        seed=args.seed, dry_run=args.dry_run, read_only=args.read_only,
-                        hierarchy=args.hierarchy)
+                    if args.payload == "v2":
+                        if args.pid or args.window_id:
+                            emit(dict(event="warning", message="--pid and --window-id are ignored in v2; Jev selects the app itself."))
+                        return await run_loop_v2(task, driver, JevChooser(client, emit=emit), emit,
+                            max_steps=args.max_steps, minimum_confidence=args.minimum_confidence,
+                            seed=args.seed, dry_run=args.dry_run)
+                    else:
+                        return await run_loop(task, driver, JevChooser(client, emit=emit), emit,
+                            target=(args.pid, args.window_id) if args.pid else None,
+                            max_steps=args.max_steps, minimum_confidence=args.minimum_confidence,
+                            seed=args.seed, dry_run=args.dry_run, read_only=args.read_only,
+                            hierarchy=args.hierarchy)
                 finally:
                     if driver.restore_target is not None:
                         try:
