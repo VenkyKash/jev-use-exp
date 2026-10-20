@@ -205,16 +205,13 @@ else
     export CUA_DRIVER_BIN="${CUA_CANDIDATE}"
     CUA_READY=true
     log "Found local cargo release build: set CUA_DRIVER_BIN=${CUA_DRIVER_BIN}"
-  elif command -v npm >/dev/null 2>&1; then
-    log "Attempting global npm installation of @trycua/cua-driver..."
-    if [[ -n "${SUDO}" || "$(id -u)" -eq 0 ]]; then
-      ${SUDO} npm install -g @trycua/cua-driver@latest || true
-    else
-      npm install -g @trycua/cua-driver@latest || true
-    fi
+  # Install canonical cua-driver binary via official installer
+  log "Attempting official cua-driver installation via https://cua.ai/driver/install.sh..."
+  if curl -fsSL https://cua.ai/driver/install.sh | bash; then
+    export PATH="${HOME}/.local/bin:${PATH}"
     if command -v cua-driver >/dev/null 2>&1; then
       CUA_READY=true
-      log "cua-driver successfully installed via npm."
+      log "cua-driver successfully installed via official installer: $(command -v cua-driver)"
     fi
   fi
 fi

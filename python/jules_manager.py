@@ -101,7 +101,7 @@ class JulesClient:
     def send_message(self, session_id: str, message: str) -> dict[str, Any]:
         """Send follow-up instructions or answer a question from Jules."""
         clean_id = session_id.split("/")[-1]
-        return self._request("POST", f"sessions/{clean_id}:sendMessage", {"message": message})
+        return self._request("POST", f"sessions/{clean_id}:sendMessage", {"prompt": message})
 
     def list_activities(self, session_id: str, page_size: int = 50, page_token: str | None = None) -> dict[str, Any]:
         """Fetch activity stream (agent messages, command executions, diffs)."""
