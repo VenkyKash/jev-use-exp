@@ -132,7 +132,7 @@ if xdpyinfo -display :99 >/dev/null 2>&1; then
   log "Existing virtual display :99 is active and healthy."
 else
   log "Starting Xvfb on display ${DISPLAY} (${SCREEN_WIDTH}x${SCREEN_HEIGHT}x${SCREEN_DEPTH})..."
-  Xvfb :99 -screen 0 "${SCREEN_WIDTH}x${SCREEN_HEIGHT}x${SCREEN_DEPTH}" -ac +extension GLX +render -noreset > "${LOG_DIR}/xvfb.log" 2>&1 &
+  Xvfb :99 -screen 0 "${SCREEN_WIDTH}x${SCREEN_HEIGHT}x${SCREEN_DEPTH}" -ac +extension GLX +extension MIT-SHM +render -noreset > "${LOG_DIR}/xvfb.log" 2>&1 &
   XVFB_PID=$!
   sleep 2
 
