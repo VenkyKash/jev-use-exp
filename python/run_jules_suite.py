@@ -44,38 +44,65 @@ async def run_single_task(task_name: str, task_path: Path, chooser: Any, emit: A
     if task.app.lower() in {"fixture", "calculator", "calc"}:
         driver = FixtureDriver("calculator" if "calc" in task.app.lower() else "form", reverse=False)
         target = (1, 2)
+        try:
+            outcome = await asyncio.wait_for(
+                run_loop(task, driver, chooser, emit, target=target, max_steps=20),
+                timeout=120
+            )
+            passed = outcome == "verified"
+            return {
+                "task": task_name,
+                "status": "completed",
+                "outcome": outcome,
+                "passed": passed,
+                "actions": len(driver.calls) if hasattr(driver, "calls") else 0,
+                "duration_s": round(time.monotonic() - started, 2)
+            }
+        except Exception as exc:
+            return {
+                "task": task_name,
+                "status": "failed",
+                "outcome": "error",
+                "passed": False,
+                "error": str(exc),
+                "duration_s": round(time.monotonic() - started, 2)
+            }
     else:
-        # For non-fixture apps without an active display session or OS mismatch
-        return {
-            "task": task_name,
-            "status": "pending_environment",
-            "reason": f"Target app '{task.app}' requires active desktop session and accessibility driver",
-            "duration_s": round(time.monotonic() - started, 2)
-        }
+        # Live Linux desktop application via cua-driver MCP
+        from mcp import ClientSession, StdioServerParameters
+        from mcp.client.stdio import stdio_client
+        from native_driver import NativeDriver
+        import uuid
 
-    try:
-        outcome = await asyncio.wait_for(
-            run_loop(task, driver, chooser, emit, target=target, max_steps=20),
-            timeout=120
-        )
-        passed = outcome == "verified"
-        return {
-            "task": task_name,
-            "status": "completed",
-            "outcome": outcome,
-            "passed": passed,
-            "actions": len(driver.calls) if hasattr(driver, "calls") else 0,
-            "duration_s": round(time.monotonic() - started, 2)
-        }
-    except Exception as exc:
-        return {
-            "task": task_name,
-            "status": "failed",
-            "outcome": "error",
-            "passed": False,
-            "error": str(exc),
-            "duration_s": round(time.monotonic() - started, 2)
-        }
+        driver_bin = os.getenv("CUA_DRIVER_BIN", "cua-driver")
+        params = StdioServerParameters(command=driver_bin, args=["mcp"])
+        try:
+            async with stdio_client(params) as (read, write):
+                async with ClientSession(read, write) as session:
+                    driver = await NativeDriver.connect(session, f"jules-{uuid.uuid4().hex[:8]}")
+                    driver.emit = emit
+                    outcome = await asyncio.wait_for(
+                        run_loop(task, driver, chooser, emit, max_steps=24),
+                        timeout=180
+                    )
+                    passed = outcome == "verified"
+                    return {
+                        "task": task_name,
+                        "status": "completed",
+                        "outcome": outcome,
+                        "passed": passed,
+                        "actions": len(getattr(driver, "calls", [])),
+                        "duration_s": round(time.monotonic() - started, 2)
+                    }
+        except Exception as exc:
+            return {
+                "task": task_name,
+                "status": "failed",
+                "outcome": "error",
+                "passed": False,
+                "error": str(exc),
+                "duration_s": round(time.monotonic() - started, 2)
+            }
 
 
 async def run_suite(tasks_dir: Path, output_dir: Path, provider: str = "first") -> dict[str, Any]:
