@@ -258,7 +258,17 @@ class NativeDriver:
         }
         if self.accepts("get_window_state", {**obs_args, "timeout_ms": 5000}):
             obs_args["timeout_ms"] = 5000
-        raw = await self.call("get_window_state", obs_args)
+        try:
+            raw = await self.call("get_window_state", obs_args)
+        except DriverFailure as e:
+            if include_screenshot and ("x11 screenshot failure" in str(e).lower() or "mit-shm" in str(e).lower()):
+                obs_args["include_screenshot"] = False
+                raw = await self.call("get_window_state", obs_args)
+                import uuid
+                if "snapshot_id" not in raw:
+                    raw["snapshot_id"] = "unindexed-" + uuid.uuid4().hex
+            else:
+                raise
         if self.accepts("list_windows", {"pid": pid}):
             windows = (await self.call("list_windows", {"pid": pid})).get("windows", [])
             window = next((w for w in windows if w.get("window_id") == window_id), {})
