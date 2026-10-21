@@ -204,10 +204,7 @@ else
   if [[ -x "${CUA_CANDIDATE}" ]]; then
     export CUA_DRIVER_BIN="${CUA_CANDIDATE}"
     CUA_READY=true
-    log "Found local cargo release build: set CUA_DRIVER_BIN=${CUA_DRIVER_BIN}"
-  # Install canonical cua-driver binary via official installer
-  log "Attempting official cua-driver installation via https://cua.ai/driver/install.sh..."
-  if curl -fsSL https://cua.ai/driver/install.sh | bash; then
+  elif curl -fsSL https://cua.ai/driver/install.sh | bash; then
     export PATH="${HOME}/.local/bin:${PATH}"
     if command -v cua-driver >/dev/null 2>&1; then
       CUA_READY=true
