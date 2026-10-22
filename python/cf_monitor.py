@@ -36,7 +36,9 @@ def list_runners(hub_url: str):
             print("-" * 80)
             for r in runners:
                 tags = ", ".join(r.get("tags", []))
-                print(f"{r.get('runner_id'):<25} {r.get('os') + ' (' + r.get('arch') + ')':<18} {tags:<25} {r.get('status'):<10}")
+                arch_str = f" ({r.get('arch')})" if r.get("arch") else ""
+                platform_str = f"{r.get('os', 'unknown')}{arch_str}"
+                print(f"{r.get('runner_id', 'unknown'):<25} {platform_str:<18} {tags:<25} {r.get('status', 'unknown'):<10}")
             print("-" * 80)
     except Exception as exc:
         print(f"[ERROR] Failed to contact hub: {exc}")

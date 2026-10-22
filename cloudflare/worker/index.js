@@ -61,9 +61,16 @@ export default {
       let runners = [];
       if (env.RUNNERS_KV) {
         const list = await env.RUNNERS_KV.list({ prefix: "runner:" });
-        for (const key of list.keys) {
-          const val = await env.RUNNERS_KV.get(key.name, { type: "json" });
-          if (val) runners.push(val);
+        const keys = list.keys || [];
+        for (const key of keys) {
+          const raw = await env.RUNNERS_KV.get(key.name);
+          if (raw) {
+            try {
+              runners.push(typeof raw === "string" ? JSON.parse(raw) : raw);
+            } catch (e) {
+              runners.push({ runner_id: key.name.replace("runner:", ""), raw });
+            }
+          }
         }
       }
       return Response.json({ runners }, { headers: corsHeaders });
