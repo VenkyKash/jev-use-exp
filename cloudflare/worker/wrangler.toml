@@ -8,7 +8,7 @@ compatibility_date = "2024-04-01"
 # - Unlimited free subdomains (*.workers.dev)
 
 kv_namespaces = [
-  { binding = "RUNNERS_KV", id = "RUNNERS_KV_PLACEHOLDER" }
+  { binding = "RUNNERS_KV", id = "19e72df0e15b482189873651c6a058a4" }
 ]
 
 [vars]

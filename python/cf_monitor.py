@@ -12,6 +12,11 @@ TASKS_DIR = PROJECT_ROOT / "tasks"
 
 
 def get_hub_url():
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(PROJECT_ROOT / ".env")
+    except ImportError:
+        pass
     url = os.getenv("CLOUDFLARE_HUB_URL")
     if not url:
         print("[ERROR] CLOUDFLARE_HUB_URL is not set in environment or .env file.")
@@ -21,7 +26,7 @@ def get_hub_url():
 
 
 def list_runners(hub_url: str):
-    req = urllib.request.Request(f"{hub_url}/api/runners")
+    req = urllib.request.Request(f"{hub_url}/api/runners", headers={"User-Agent": "JevMonitor/1.0"})
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read().decode())
@@ -38,7 +43,7 @@ def list_runners(hub_url: str):
 
 
 def list_results(hub_url: str):
-    req = urllib.request.Request(f"{hub_url}/api/results")
+    req = urllib.request.Request(f"{hub_url}/api/results", headers={"User-Agent": "JevMonitor/1.0"})
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read().decode())
@@ -72,7 +77,7 @@ def dispatch_task(hub_url: str, task_name: str):
     req = urllib.request.Request(
         f"{hub_url}/api/tasks/submit",
         data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"}
+        headers={"Content-Type": "application/json", "User-Agent": "JevMonitor/1.0"}
     )
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
