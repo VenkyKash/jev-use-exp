@@ -1,0 +1,15 @@
+name = "jev-crossplatform-hub"
+main = "index.js"
+compatibility_date = "2024-04-01"
+
+# 100% Free Tier Configuration:
+# - Workers Free: 100,000 requests/day
+# - KV Free: 100,000 read requests/day, 1,000 write requests/day
+# - Unlimited free subdomains (*.workers.dev)
+
+kv_namespaces = [
+  { binding = "RUNNERS_KV", id = "RUNNERS_KV_PLACEHOLDER" }
+]
+
+[vars]
+SHARED_SECRET = "dev-secret-key"
