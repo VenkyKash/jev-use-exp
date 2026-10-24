@@ -161,7 +161,11 @@ async def queue_worker(state: RunnerState, task_queue: asyncio.Queue, hub_url: s
                 req = urllib.request.Request(
                     report_url,
                     data=json.dumps({"runner_id": state.runner_id, "result": result}).encode("utf-8"),
-                    headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {api_key}",
+                        "User-Agent": "JevRunner/1.0"
+                    }
                 )
                 try:
                     urllib.request.urlopen(req, timeout=10)

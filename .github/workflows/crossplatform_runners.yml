@@ -35,7 +35,7 @@ jobs:
           ./startup_jules.sh
 
       - name: Run Test Suite Immediately & Sync to Cloudflare
-        if: ${{ inputs.run_suite_immediately != false }}
+        if: ${{ github.event_name == 'push' || inputs.run_suite_immediately != false }}
         env:
           CLOUDFLARE_HUB_URL: "https://jev-crossplatform-hub.kashyapv2.workers.dev"
           TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
