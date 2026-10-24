@@ -184,12 +184,15 @@ async def heartbeat_loop(state: RunnerState, hub_url: str | None, api_key: str |
             req = urllib.request.Request(
                 url,
                 data=json.dumps(state.to_dict()).encode("utf-8"),
-                headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {api_key}",
+                    "User-Agent": "JevRunner/1.0"
+                }
             )
             urllib.request.urlopen(req, timeout=10)
         except Exception as e:
-            # Silent fallback if hub is temporarily unreachable
-            pass
+            print(f"[RUNNER HEARTBEAT ERROR] Failed to send heartbeat: {e}", flush=True)
         await asyncio.sleep(15)
 
 

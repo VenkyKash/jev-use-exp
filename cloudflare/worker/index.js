@@ -46,9 +46,9 @@ export default {
           return Response.json({ error: "Missing runner_id" }, { status: 400, headers: corsHeaders });
         }
         
-        // Save runner status into KV if bound, or memory
+        // Save runner status into KV if bound, or memory (10 minutes TTL)
         if (env.RUNNERS_KV) {
-          await env.RUNNERS_KV.put(`runner:${runnerId}`, JSON.stringify(body), { expirationTtl: 120 });
+          await env.RUNNERS_KV.put(`runner:${runnerId}`, JSON.stringify(body), { expirationTtl: 600 });
         }
         return Response.json({ ok: true, registered: runnerId }, { headers: corsHeaders });
       } catch (err) {
