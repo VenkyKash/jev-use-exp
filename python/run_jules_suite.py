@@ -76,13 +76,18 @@ async def run_single_task(task_name: str, task_path: Path, chooser: Any, emit: A
 
         driver_bin = os.getenv("CUA_DRIVER_BIN", "cua-driver")
         params = StdioServerParameters(command=driver_bin, args=["mcp"])
+        task_events: list[dict[str, Any]] = []
+        def task_emit(event: dict[str, Any]):
+            task_events.append(event)
+            emit(event)
+
         try:
             async with stdio_client(params) as (read, write):
                 async with ClientSession(read, write) as session:
                     driver = await NativeDriver.connect(session, f"jules-{uuid.uuid4().hex[:8]}")
-                    driver.emit = emit
+                    driver.emit = task_emit
                     outcome = await asyncio.wait_for(
-                        run_loop(task, driver, chooser, emit, max_steps=24),
+                        run_loop(task, driver, chooser, task_emit, max_steps=24),
                         timeout=180
                     )
                     passed = outcome == "verified"
@@ -92,7 +97,8 @@ async def run_single_task(task_name: str, task_path: Path, chooser: Any, emit: A
                         "outcome": outcome,
                         "passed": passed,
                         "actions": len(getattr(driver, "calls", [])),
-                        "duration_s": round(time.monotonic() - started, 2)
+                        "duration_s": round(time.monotonic() - started, 2),
+                        "events": task_events[-10:] if task_events else []
                     }
         except Exception as exc:
             return {
@@ -101,7 +107,8 @@ async def run_single_task(task_name: str, task_path: Path, chooser: Any, emit: A
                 "outcome": "error",
                 "passed": False,
                 "error": str(exc),
-                "duration_s": round(time.monotonic() - started, 2)
+                "duration_s": round(time.monotonic() - started, 2),
+                "events": task_events[-10:] if task_events else []
             }
 
 

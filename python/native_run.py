@@ -47,7 +47,7 @@ async def run_loop(task, driver, chooser, emit, *, target=None, max_steps=24,
         if type(pid) is not int or pid <= 0:
             return "unknown"
         windows = result.get("windows", [])
-        for _ in range(5):
+        for _ in range(15):
             if select_window(windows, pid) is not None:
                 break
             await asyncio.sleep(.2)
@@ -55,7 +55,7 @@ async def run_loop(task, driver, chooser, emit, *, target=None, max_steps=24,
         window_id = select_window(windows, pid)
         if window_id is None:
             emit(dict(event="target_required", pid=pid, windows=windows))
-            return "needs_window_selection"
+            return "unknown"
         target = (pid, window_id)
         emit(dict(event="target_bound", pid=pid, window_id=window_id,
                   rule="unique_named_or_only_window"))

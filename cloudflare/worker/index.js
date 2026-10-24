@@ -256,16 +256,28 @@ function renderDashboardHtml() {
         if (!resRes.results || resRes.results.length === 0) {
           resultsDiv.innerHTML = '<p style="color:var(--subtext)">No recent test runs completed.</p>';
         } else {
-          let html = '<table><thead><tr><th>Runner</th><th>Task</th><th>Outcome</th><th>Result</th><th>Duration</th></tr></thead><tbody>';
-          for (const item of resRes.results) {
-            const res = item.result;
-            html += \`<tr>
-              <td>\${item.runner_id}</td>
-              <td>\${res.task}</td>
-              <td>\${res.outcome}</td>
-              <td class="\${res.passed ? 'pass' : 'fail'}">\${res.passed ? 'PASSED' : 'FAILED'}</td>
-              <td>\${res.duration_s}s</td>
-            </tr>\`;
+          let html = '<table><thead><tr><th>Runner</th><th>Task</th><th>Outcome</th><th>Result</th><th>Duration</th><th>Details</th></tr></thead><tbody>';
+          for (let i = 0; i < resRes.results.length; i++) {
+            const item = resRes.results[i];
+            const res = item.result || {};
+            const events = res.events || [];
+            const error = res.error || res.reason || '';
+            const eventsJson = JSON.stringify(events, null, 2);
+            html += '<tr>' +
+              '<td>' + (item.runner_id || 'unknown') + '</td>' +
+              '<td><b>' + (res.task || 'task') + '</b></td>' +
+              '<td><code>' + (res.outcome || '-') + '</code></td>' +
+              '<td class="' + (res.passed ? 'pass' : 'fail') + '">' + (res.passed ? 'PASSED' : 'FAILED') + '</td>' +
+              '<td>' + (res.duration_s !== undefined ? res.duration_s + 's' : '-') + '</td>' +
+              '<td><button onclick="var el = document.getElementById(\\'details-' + i + '\\'); el.style.display = (el.style.display === \\'none\\' ? \\'table-row\\' : \\'none\\');" style="background:#1e293b; color:#38bdf8; border:1px solid #334155; padding:0.2rem 0.5rem; border-radius:4px; cursor:pointer;">Logs</button></td>' +
+            '</tr>' +
+            '<tr id="details-' + i + '" style="display:none; background:#0f172a;">' +
+              '<td colspan="6" style="padding:0.75rem;">' +
+                (error ? '<div style="color:#f87171; margin-bottom:0.5rem;"><b>Error/Reason:</b> ' + error + '</div>' : '') +
+                '<div style="font-size:0.8rem; color:#94a3b8; margin-bottom:0.25rem;"><b>Recent Events / Trail:</b></div>' +
+                '<pre style="background:#020617; color:#e2e8f0; padding:0.5rem; border-radius:4px; max-height:200px; overflow-y:auto; font-size:0.75rem; margin:0;">' + (events.length > 0 ? eventsJson.replace(/</g, '&lt;').replace(/>/g, '&gt;') : 'No event details recorded') + '</pre>' +
+              '</td>' +
+            '</tr>';
           }
           html += '</tbody></table>';
           resultsDiv.innerHTML = html;

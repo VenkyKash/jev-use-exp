@@ -56,7 +56,12 @@ def list_results(hub_url: str):
             for item in results:
                 res = item.get("result", {})
                 status_str = "PASSED" if res.get("passed") else "FAILED"
-                print(f"{item.get('runner_id'):<22} {res.get('task'):<22} {res.get('outcome'):<15} {status_str:<10} {str(res.get('duration_s')) + 's':<10}")
+                runner_str = str(item.get("runner_id") or "unknown")
+                task_str = str(res.get("task") or "unknown")
+                outcome_str = str(res.get("outcome") or "unknown")
+                dur_val = res.get("duration_s")
+                dur_str = f"{dur_val}s" if dur_val is not None else "-"
+                print(f"{runner_str:<22} {task_str:<22} {outcome_str:<15} {status_str:<10} {dur_str:<10}")
             print("-" * 82)
     except Exception as exc:
         print(f"[ERROR] Failed to fetch results: {exc}")
