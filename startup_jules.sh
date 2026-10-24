@@ -156,9 +156,19 @@ if command -v dbus-launch >/dev/null 2>&1 && [[ -z "${DBUS_SESSION_BUS_ADDRESS:-
   log "Launching D-Bus session..."
   eval "$(dbus-launch --sh-syntax)"
   export DBUS_SESSION_BUS_ADDRESS
-  if [[ -n "${GITHUB_ENV:-}" ]]; then
-    echo "DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS}" >> "${GITHUB_ENV}"
-  fi
+fi
+
+cat <<EOF > "${HOME}/.jules_env"
+export DISPLAY=:99
+export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-}"
+export GTK_MODULES="gail:atk-bridge"
+export QT_ACCESSIBILITY=1
+export NO_AT_BRIDGE=0
+export PATH="${HOME}/.local/bin:${PATH}"
+EOF
+
+if [[ -n "${GITHUB_ENV:-}" ]]; then
+  cat "${HOME}/.jules_env" | sed 's/export //' >> "${GITHUB_ENV}"
 fi
 
 # Enable AT-SPI accessibility bus
