@@ -199,12 +199,36 @@ def generate_improvement_report(summary: dict[str, Any], report_dir: Path) -> Pa
     return report_path
 
 
+def sync_to_cloudflare(summary: dict[str, Any], hub_url: str | None, api_key: str | None, runner_id: str):
+    if not hub_url:
+        return
+    import urllib.request
+    report_url = f"{hub_url.rstrip('/')}/api/results"
+    for r in summary.get("results", []):
+        try:
+            req = urllib.request.Request(
+                report_url,
+                data=json.dumps({"runner_id": runner_id, "result": r}).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {api_key or 'dev-secret-key'}",
+                    "User-Agent": "JevRunner/1.0"
+                }
+            )
+            urllib.request.urlopen(req, timeout=10)
+            print(f"[SYNC] Synced result for task '{r.get('task')}' to Cloudflare Hub")
+        except Exception as exc:
+            print(f"[SYNC WARNING] Failed to sync task '{r.get('task')}' to Cloudflare: {exc}")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tasks-dir", type=Path, default=Path(__file__).resolve().parents[1] / "tasks")
     parser.add_argument("--log-dir", type=Path, default=Path(__file__).resolve().parents[1] / "runs")
     parser.add_argument("--report-dir", type=Path, default=Path(__file__).resolve().parents[1] / "reports")
-    parser.add_argument("--provider", choices=["first", "live"], default="first")
+    default_provider = "live" if os.getenv("TYPESAFE_API_KEY") else "first"
+    parser.add_argument("--provider", choices=["first", "live"], default=default_provider)
+    parser.add_argument("--runner-id", type=str, default=os.getenv("RUNNER_ID", "local-runner"))
     args = parser.parse_args()
 
     args.log_dir.mkdir(parents=True, exist_ok=True)
@@ -213,6 +237,15 @@ def main():
     print(f"\n[JULES SUITE COMPLETE] Summary saved to: {args.log_dir}")
     print(f"[JULES SUITE COMPLETE] Improvement report generated at: {report_file}")
     print(json.dumps(summary, indent=2))
+
+    hub_url = os.getenv("CLOUDFLARE_HUB_URL")
+    api_key = os.getenv("CLOUDFLARE_RUNNER_KEY")
+    if hub_url:
+        sync_to_cloudflare(summary, hub_url, api_key, args.runner_id)
+
+    if summary.get("failed", 0) > 0:
+        print(f"\n[FAILURE] {summary['failed']} task(s) failed evaluation.")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
