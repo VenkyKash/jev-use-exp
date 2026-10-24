@@ -34,7 +34,11 @@ jobs:
         run: |
           export DISPLAY=:99
           export PATH="${HOME}/.local/bin:${PATH}"
-          uv run python python/run_jules_suite.py --provider live --report-dir reports --runner-id github-actions-ubuntu
+          if [[ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]] && command -v dbus-run-session >/dev/null 2>&1; then
+            dbus-run-session -- uv run python python/run_jules_suite.py --provider live --report-dir reports --runner-id github-actions-ubuntu
+          else
+            uv run python python/run_jules_suite.py --provider live --report-dir reports --runner-id github-actions-ubuntu
+          fi
 
       - name: Upload Linux Evaluation Artifacts & Evidence
         if: always()

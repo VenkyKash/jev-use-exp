@@ -156,6 +156,9 @@ if command -v dbus-launch >/dev/null 2>&1 && [[ -z "${DBUS_SESSION_BUS_ADDRESS:-
   log "Launching D-Bus session..."
   eval "$(dbus-launch --sh-syntax)"
   export DBUS_SESSION_BUS_ADDRESS
+  if [[ -n "${GITHUB_ENV:-}" ]]; then
+    echo "DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS}" >> "${GITHUB_ENV}"
+  fi
 fi
 
 # Enable AT-SPI accessibility bus
