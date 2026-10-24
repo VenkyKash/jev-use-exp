@@ -1,0 +1,101 @@
+name: Cross-Platform Test Runners (Linux & Windows)
+
+on:
+  workflow_dispatch:
+    inputs:
+      duration_minutes:
+        description: 'Duration to keep runner agent online (minutes)'
+        required: false
+        default: '30'
+      run_suite_immediately:
+        description: 'Run python/run_jules_suite.py immediately on start'
+        type: boolean
+        default: true
+  push:
+    branches:
+      - main
+      - jules
+
+jobs:
+  linux-runner:
+    name: Linux Runner (Ubuntu Xvfb + AT-SPI)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - name: Provision Linux GUI Environment & Cua Driver
+        run: |
+          chmod +x startup_jules.sh
+          ./startup_jules.sh
+
+      - name: Run Test Suite Immediately & Sync to Cloudflare
+        if: ${{ inputs.run_suite_immediately != false }}
+        env:
+          CLOUDFLARE_HUB_URL: "https://jev-crossplatform-hub.kashyapv2.workers.dev"
+          TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
+        run: |
+          export DISPLAY=:99
+          export PATH="${HOME}/.local/bin:${PATH}"
+          uv run python python/run_jules_suite.py --report-dir reports
+
+      - name: Start Cloudflare Runner Agent (Listener)
+        env:
+          CLOUDFLARE_HUB_URL: "https://jev-crossplatform-hub.kashyapv2.workers.dev"
+          TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
+        run: |
+          export DISPLAY=:99
+          export PATH="${HOME}/.local/bin:${PATH}"
+          MINUTES=${{ inputs.duration_minutes || '10' }}
+          echo "Keeping runner online for ${MINUTES} minutes..."
+          timeout "${MINUTES}m" uv run python python/runner_agent/agent.py \
+            --id "github-actions-ubuntu" \
+            --tags "linux,x11,office,github-actions" \
+            --hub "https://jev-crossplatform-hub.kashyapv2.workers.dev" || true
+
+      - name: Upload Linux Evaluation Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-evaluation-reports
+          path: reports/
+
+  windows-runner:
+    name: Windows Runner (Windows Server UI Automation)
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - name: Install Cua Driver on Windows
+        shell: powershell
+        run: |
+          Invoke-WebRequest -Uri "https://cua.ai/driver/install.ps1" -OutFile "$env:TEMP\install.ps1"
+          & "$env:TEMP\install.ps1" -ErrorAction SilentlyContinue
+          # Add default install location to path
+          $env:Path += ";$env:USERPROFILE\.local\bin"
+          Write-Output "Cua Driver installed."
+
+      - name: Start Cloudflare Runner Agent (Listener)
+        shell: bash
+        env:
+          CLOUDFLARE_HUB_URL: "https://jev-crossplatform-hub.kashyapv2.workers.dev"
+          TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
+        run: |
+          export PATH="$USERPROFILE/.local/bin:$PATH"
+          MINUTES=${{ inputs.duration_minutes || '10' }}
+          echo "Keeping Windows runner online for ${MINUTES} minutes..."
+          timeout "${MINUTES}m" uv run python python/runner_agent/agent.py \
+            --id "github-actions-windows" \
+            --tags "windows,uia,calc,github-actions" \
+            --hub "https://jev-crossplatform-hub.kashyapv2.workers.dev" || true
