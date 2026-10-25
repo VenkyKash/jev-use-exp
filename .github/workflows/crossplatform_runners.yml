@@ -35,6 +35,8 @@ jobs:
             source "${HOME}/.jules_env"
           fi
           
+          uv run python python/ci_diagnose.py || true
+          
           uv run python python/run_jules_suite.py --provider live --report-dir reports --runner-id github-actions-ubuntu
 
       - name: Upload Linux Evaluation Artifacts & Evidence
