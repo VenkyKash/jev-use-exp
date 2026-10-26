@@ -92,6 +92,9 @@ if [[ -n "${SUDO}" || "$(id -u)" -eq 0 ]]; then
     pkg-config \
     dbus \
     dbus-x11 \
+    dbus-user-session \
+    xdg-desktop-portal \
+    xdg-desktop-portal-gtk \
     at-spi2-core \
     xvfb \
     x11-utils \
@@ -151,16 +154,33 @@ if command -v fluxbox >/dev/null 2>&1; then
   fi
 fi
 
-# Launch D-Bus session if needed for AT-SPI accessibility
-if command -v dbus-launch >/dev/null 2>&1 && [[ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]]; then
-  log "Launching D-Bus session..."
+# Connect to native systemd user bus if active, or launch session bus
+XDG_BUS="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/bus"
+if [[ -S "${XDG_BUS}" ]]; then
+  log "Connecting to native systemd user session bus at ${XDG_BUS}..."
+  export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_BUS}"
+elif [[ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]] && command -v dbus-launch >/dev/null 2>&1; then
+  log "Launching fallback D-Bus session..."
   eval "$(dbus-launch --sh-syntax)"
   export DBUS_SESSION_BUS_ADDRESS
+fi
+
+# Ensure portals are started under DISPLAY=:99 so app launch handoffs resolve
+if command -v /usr/libexec/xdg-desktop-portal-gtk >/dev/null 2>&1; then
+  if ! pgrep -f "xdg-desktop-portal-gtk" >/dev/null 2>&1; then
+    /usr/libexec/xdg-desktop-portal-gtk > "${LOG_DIR}/portal-gtk.log" 2>&1 &
+  fi
+fi
+if command -v /usr/libexec/xdg-desktop-portal >/dev/null 2>&1; then
+  if ! pgrep -f "xdg-desktop-portal$" >/dev/null 2>&1; then
+    /usr/libexec/xdg-desktop-portal > "${LOG_DIR}/portal.log" 2>&1 &
+  fi
 fi
 
 cat <<EOF > "${HOME}/.jules_env"
 export DISPLAY=:99
 export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-}"
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 export GTK_MODULES="gail:atk-bridge"
 export QT_ACCESSIBILITY=1
 export NO_AT_BRIDGE=0
